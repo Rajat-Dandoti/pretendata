@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X } from 'lucide-react';
+import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu } from 'lucide-react';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, TIER_CHIP } from './lib/ui';
@@ -78,6 +78,8 @@ export default function App() {
     return initial;
   });
   const [toast, setToast] = useState<string | null>(null);
+  // ponytail: single slot, not two booleans — only one off-canvas drawer can be open at a time on mobile.
+  const [mobileDrawer, setMobileDrawer] = useState<'settings' | 'columns' | null>(null);
   const [showCompliance, setShowCompliance] = useState(false);
   const [complianceEnabled, setComplianceEnabled] = useState(true);
   const complianceRef = useRef<HTMLDivElement>(null);
@@ -356,8 +358,17 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+      {/* Below lg, both sidebars go off-canvas — 320px + 288px can't share a phone screen with the table. */}
+      {mobileDrawer && (
+        <div className="fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setMobileDrawer(null)} />
+      )}
+
       {/* Sidebar */}
-      <div className="w-80 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm z-10">
+      <div className={cn(
+        "w-80 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm",
+        "fixed inset-y-0 left-0 z-40 transition-transform duration-200 lg:static lg:translate-x-0 lg:z-10",
+        mobileDrawer === 'settings' ? "translate-x-0" : "-translate-x-full"
+      )}>
         <div className="p-5 border-b border-slate-200 flex items-center gap-3">
           <div className="bg-indigo-600 p-2 rounded-lg text-white">
             <ShieldAlert size={20} />
@@ -366,6 +377,14 @@ export default function App() {
             <h1 className="font-semibold text-slate-900 leading-tight">Pretendata</h1>
             <p className="text-xs text-slate-500">Synthetic test data for QA &amp; DLP</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMobileDrawer(null)}
+            className="ml-auto lg:hidden p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"
+            aria-label="Close settings"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -568,7 +587,11 @@ export default function App() {
       </div>
 
       {/* Columns Column */}
-      <aside className="w-72 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm z-10">
+      <aside className={cn(
+        "w-72 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm",
+        "fixed inset-y-0 left-0 z-40 transition-transform duration-200 lg:static lg:translate-x-0 lg:z-10",
+        mobileDrawer === 'columns' ? "translate-x-0" : "-translate-x-full"
+      )}>
         <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
           <Settings size={16} className="text-slate-400" />
           <h2 className="text-sm font-medium text-slate-700">Configure Columns</h2>
@@ -592,6 +615,14 @@ export default function App() {
             className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition-colors"
           >
             <Library size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileDrawer(null)}
+            className="lg:hidden p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"
+            aria-label="Close columns"
+          >
+            <X size={16} />
           </button>
         </div>
         <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
@@ -663,7 +694,7 @@ export default function App() {
                       <button
                         key={col.id}
                         onClick={() => handleToggleColumn(col.id)}
-                        className="w-full flex items-center gap-3 px-2 py-1.5 rounded-md hover:bg-slate-50 transition-colors text-left group"
+                        className="w-full flex items-center gap-3 px-2 py-2 lg:py-1.5 rounded-md hover:bg-slate-50 transition-colors text-left group"
                       >
                         <div className={cn("flex-shrink-0", isSelected ? "text-indigo-600" : "text-slate-300 group-hover:text-slate-400")}>
                           {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
@@ -703,8 +734,26 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 min-w-0 flex flex-col h-full bg-slate-50/50">
         {/* Header */}
-        <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-8 flex-shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="min-h-16 lg:h-16 border-b border-slate-200 bg-white flex items-center justify-between px-4 lg:px-8 py-2 lg:py-0 flex-wrap gap-y-2 flex-shrink-0">
+          <div className="flex items-center gap-2 lg:gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileDrawer('settings')}
+              className="lg:hidden p-1.5 -ml-1 text-slate-500 hover:text-slate-700 rounded hover:bg-slate-100"
+              aria-label="Open settings"
+              title="Settings"
+            >
+              <Menu size={18} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileDrawer('columns')}
+              className="lg:hidden p-1.5 text-slate-500 hover:text-slate-700 rounded hover:bg-slate-100"
+              aria-label="Open column picker"
+              title="Columns"
+            >
+              <Settings size={18} />
+            </button>
             <h2 className="text-lg font-medium text-slate-800">
               {generatedData.length > 0 ? 'Generated Data' : 'Live Preview'}
             </h2>
@@ -720,14 +769,15 @@ export default function App() {
             )}
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 lg:gap-3 flex-wrap">
             <Button
               size="md"
               onClick={handleCopyShareLink}
               title="Copy a URL that reproduces this exact config (preset, columns, rows, seed, sparsity, stream format)"
+              aria-label="Copy link"
             >
               <Link2 size={ICON.label} />
-              Copy link
+              <span className="hidden lg:inline">Copy link</span>
             </Button>
             <label
               title="Bundle a sidecar manifest describing columns/categories/regions next to the data, packed as a zip"
@@ -739,30 +789,33 @@ export default function App() {
                 onChange={e => setIncludeManifest(e.target.checked)}
                 className="accent-slate-700"
               />
-              DLP manifest (.zip)
+              <span className="hidden lg:inline">DLP manifest (.zip)</span>
+              <span className="lg:hidden">ZIP</span>
             </label>
             <Button
               size="md"
               onClick={() => exportCSV(generatedData, selectedColumns, includeManifest ? (lastRunMeta ?? undefined) : undefined)}
               disabled={generatedData.length === 0}
+              aria-label="Export CSV"
             >
               <FileSpreadsheet size={ICON.label} />
-              CSV
+              <span className="hidden lg:inline">CSV</span>
             </Button>
             <Button
               size="md"
               onClick={() => exportJSON(generatedData, selectedColumns, includeManifest ? (lastRunMeta ?? undefined) : undefined, jsonStructure, nestDepth)}
               disabled={generatedData.length === 0}
               title={jsonStructure === 'flat' ? 'Export JSON (flat)' : `Export JSON (${jsonStructure}${jsonStructure === 'deep' ? ` ×${nestDepth}` : ''})`}
+              aria-label="Export JSON"
             >
               <FileJson size={ICON.label} />
-              JSON
+              <span className="hidden lg:inline">JSON</span>
             </Button>
           </div>
         </header>
 
         {/* Stats Bar */}
-        <div className="bg-white border-b border-slate-200 px-8 py-3 flex items-center gap-6 flex-shrink-0">
+        <div className="bg-white border-b border-slate-200 px-4 lg:px-8 py-3 flex items-center gap-6 flex-shrink-0">
           <div className="flex items-center gap-6 overflow-x-auto min-w-0 flex-1">
             {Object.entries(CATEGORY_COLORS).map(([cat, colorClass]) => {
               const count = activeCols.filter(c => c.category === cat).length;
@@ -855,7 +908,7 @@ export default function App() {
         </div>
 
         {/* Table Area */}
-        <div className="flex-1 overflow-hidden p-8 flex flex-col">
+        <div className="flex-1 overflow-hidden p-4 lg:p-8 flex flex-col">
           {selectedColumns.size === 0 ? (
             <div className="h-full flex flex-col items-center justify-center space-y-5 text-center px-8">
               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
@@ -916,7 +969,7 @@ export default function App() {
         </div>
 
         {/* Sticky action footer — Generate + AI modes, deduped from sidebar */}
-        <div className="border-t border-slate-200 bg-white px-6 py-3 flex items-center gap-3 flex-shrink-0 shadow-[0_-1px_2px_rgba(0,0,0,0.03)]">
+        <div className="border-t border-slate-200 bg-white px-4 lg:px-6 py-3 flex items-center gap-2 lg:gap-3 flex-wrap flex-shrink-0 shadow-[0_-1px_2px_rgba(0,0,0,0.03)]">
           <Button
             variant="primary"
             size="md"
@@ -933,7 +986,7 @@ export default function App() {
                 : `Generate ${formatRows(rowCount)} rows`}
           </Button>
           {selectedColumns.size > 0 && !streamProgress && (
-            <div className="flex items-center gap-4 text-xs">
+            <div className="hidden sm:flex items-center gap-4 text-xs">
               <div className="flex flex-col leading-tight">
                 <span className={T.micro}>Est. Size</span>
                 <span className={T.mono}>{estimate.sizeStr}</span>
@@ -961,7 +1014,7 @@ export default function App() {
       {showReference && <ColumnReference onClose={() => setShowReference(false)} locale={locale} />}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
+        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
           <span>{toast}</span>
           <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white ml-1" aria-label="Dismiss">
