@@ -7,7 +7,7 @@ data that *looks* sensitive but identifies no real person, so you can exercise d
 and classification tools without touching production data. Every value runs client-side — nothing you
 generate ever leaves your machine.
 
-<!-- 🔗 **Live demo:** https://pretendata.pages.dev  (add your deploy URL) -->
+🔗 **Live demo:** <https://pretendata.voidkit.workers.dev/>
 
 For the exact shape, algorithm, and validation contract of every column, see **[COLUMNS.md](COLUMNS.md)**.
 
@@ -27,7 +27,8 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Nested-JSON export** — flat, grouped-by-category, semantic record, or deep-nested N levels
   (to test whether a classifier traverses nested structures).
 - Chaos / malformed preset, dataset risk summary, reproducible **seeds**, sparsity (null injection),
-  locale support, shareable config links, and large-dataset streaming (Chrome/Edge).
+  locale support, shareable config links, and large-dataset streaming to a single file in any browser.
+- Responsive layout — off-canvas sidebars on mobile, collapsible panels on desktop.
 - Export to **CSV / JSON / NDJSON** with an optional DLP manifest sidecar.
 
 ## Quick start
@@ -58,8 +59,12 @@ The site is static — build it and drop `dist/` on any static host.
 - **Build command:** `npm run build`
 - **Output directory:** `dist`
 
-`public/_redirects` (`/* /index.html 200`) is already included for SPA routing. Netlify and Vercel work
-the same way; GitHub Pages needs a `base` path in `vite.config.ts` plus a deploy action.
+This is a single-page app — the host needs to fall back to `index.html` for unknown paths (Cloudflare
+Pages/Workers and Netlify do this automatically for a Vite SPA; GitHub Pages needs a `base` path in
+`vite.config.ts` plus a deploy action). `public/` ships `sw.js` + `mitm.html` — a self-hosted
+[streamsaver](https://github.com/jimmywarting/StreamSaver.js) service worker used as the >100k-row
+export fallback in browsers without the File System Access API — make sure your host serves these as
+static files at the site root.
 
 ## Optional API server
 
