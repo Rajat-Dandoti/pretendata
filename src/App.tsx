@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu } from 'lucide-react';
+import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, TIER_CHIP } from './lib/ui';
@@ -80,6 +80,9 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   // ponytail: single slot, not two booleans — only one off-canvas drawer can be open at a time on mobile.
   const [mobileDrawer, setMobileDrawer] = useState<'settings' | 'columns' | null>(null);
+  // Independent of mobileDrawer — at lg+ each sidebar can be collapsed to reclaim width for the table.
+  const [settingsCollapsed, setSettingsCollapsed] = useState(false);
+  const [columnsCollapsed, setColumnsCollapsed] = useState(false);
   const [showCompliance, setShowCompliance] = useState(false);
   const [complianceEnabled, setComplianceEnabled] = useState(true);
   const complianceRef = useRef<HTMLDivElement>(null);
@@ -361,9 +364,12 @@ export default function App() {
 
       {/* Sidebar */}
       <div className={cn(
-        "w-80 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm",
-        "fixed inset-y-0 left-0 z-40 transition-transform duration-200 lg:static lg:translate-x-0 lg:z-10",
-        mobileDrawer === 'settings' ? "translate-x-0" : "-translate-x-full"
+        "w-80 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm shrink-0",
+        "fixed inset-y-0 left-0 z-40 transition-all duration-200 lg:static lg:translate-x-0 lg:z-10",
+        mobileDrawer === 'settings' ? "translate-x-0" : "-translate-x-full",
+        // ponytail: collapsed panel is width-0 + overflow-hidden rather than unmounted — simplest way
+        // to keep its internal state (scroll position, open <details>) intact across toggles.
+        settingsCollapsed ? "lg:w-0 lg:border-r-0 lg:overflow-hidden" : "lg:w-80"
       )}>
         <div className="p-5 border-b border-slate-200 flex items-center gap-3">
           <div className="bg-indigo-600 p-2 rounded-lg text-white">
@@ -373,6 +379,15 @@ export default function App() {
             <h1 className="font-semibold text-slate-900 leading-tight">Pretendata</h1>
             <p className="text-xs text-slate-500">Synthetic test data for QA &amp; DLP</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setSettingsCollapsed(true)}
+            className="hidden lg:inline-flex ml-auto p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"
+            aria-label="Collapse settings panel"
+            title="Collapse panel"
+          >
+            <PanelLeftClose size={16} />
+          </button>
           <button
             type="button"
             onClick={() => setMobileDrawer(null)}
@@ -583,9 +598,10 @@ export default function App() {
 
       {/* Columns Column */}
       <aside className={cn(
-        "w-72 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm",
-        "fixed inset-y-0 left-0 z-40 transition-transform duration-200 lg:static lg:translate-x-0 lg:z-10",
-        mobileDrawer === 'columns' ? "translate-x-0" : "-translate-x-full"
+        "w-72 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm shrink-0",
+        "fixed inset-y-0 left-0 z-40 transition-all duration-200 lg:static lg:translate-x-0 lg:z-10",
+        mobileDrawer === 'columns' ? "translate-x-0" : "-translate-x-full",
+        columnsCollapsed ? "lg:w-0 lg:border-r-0 lg:overflow-hidden" : "lg:w-72"
       )}>
         <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
           <Settings size={16} className="text-slate-400" />
@@ -610,6 +626,15 @@ export default function App() {
             className="p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100 transition-colors"
           >
             <Library size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setColumnsCollapsed(true)}
+            className="hidden lg:inline-flex p-1 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"
+            aria-label="Collapse columns panel"
+            title="Collapse panel"
+          >
+            <PanelRightClose size={15} />
           </button>
           <button
             type="button"
@@ -749,6 +774,28 @@ export default function App() {
             >
               <Settings size={18} />
             </button>
+            {settingsCollapsed && (
+              <button
+                type="button"
+                onClick={() => setSettingsCollapsed(false)}
+                className="hidden lg:inline-flex p-1.5 -ml-1 text-slate-500 hover:text-slate-700 rounded hover:bg-slate-100"
+                aria-label="Show settings panel"
+                title="Show settings panel"
+              >
+                <PanelLeftOpen size={18} />
+              </button>
+            )}
+            {columnsCollapsed && (
+              <button
+                type="button"
+                onClick={() => setColumnsCollapsed(false)}
+                className="hidden lg:inline-flex p-1.5 text-slate-500 hover:text-slate-700 rounded hover:bg-slate-100"
+                aria-label="Show columns panel"
+                title="Show columns panel"
+              >
+                <PanelRightOpen size={18} />
+              </button>
+            )}
             <h2 className="text-lg font-medium text-slate-800">
               {generatedData.length > 0 ? 'Generated Data' : 'Live Preview'}
             </h2>
