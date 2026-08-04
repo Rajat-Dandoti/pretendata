@@ -434,7 +434,7 @@ export default function App() {
             {isLarge && (
               <div className="mt-2 space-y-2 p-2.5 rounded-md bg-amber-50 border border-amber-200">
                 <p className="text-[11px] text-amber-800 leading-snug">
-                  <strong>Large dataset:</strong> Will stream directly to a file you pick. Preview and AI modes are disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
+                  <strong>Large dataset:</strong> Will stream directly to a file you pick. Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
                 </p>
                 {!streamSupported && (
                   <p className="text-[11px] text-rose-700">⚠ Requires Chrome or Edge (File System Access API).</p>
@@ -968,7 +968,7 @@ export default function App() {
           })()}
         </div>
 
-        {/* Sticky action footer — Generate + AI modes, deduped from sidebar */}
+        {/* Sticky action footer — Generate button + progress/estimate, deduped from sidebar */}
         <div className="border-t border-slate-200 bg-white px-4 lg:px-6 py-3 flex items-center gap-2 lg:gap-3 flex-wrap flex-shrink-0 shadow-[0_-1px_2px_rgba(0,0,0,0.03)]">
           <Button
             variant="primary"
