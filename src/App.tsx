@@ -262,10 +262,6 @@ export default function App() {
     const columnIds = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id)).map(c => c.id);
 
     if (isLarge) {
-      if (!streamSupported) {
-        alert('Generating more than 100,000 rows requires Chrome or Edge (File System Access API). Lower the row count or switch browsers.');
-        return;
-      }
       setIsGenerating(true);
       setStreamProgress({ written: 0, total: rowCount });
       const ac = new AbortController();
@@ -434,11 +430,10 @@ export default function App() {
             {isLarge && (
               <div className="mt-2 space-y-2 p-2.5 rounded-md bg-amber-50 border border-amber-200">
                 <p className="text-[11px] text-amber-800 leading-snug">
-                  <strong>Large dataset:</strong> Will stream directly to a file you pick. Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
+                  <strong>Large dataset:</strong> {streamSupported
+                    ? "Will stream directly to a file you pick."
+                    : "Will stream straight to your downloads folder (your browser can't prompt for a save location)."} Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
                 </p>
-                {!streamSupported && (
-                  <p className="text-[11px] text-rose-700">⚠ Requires Chrome or Edge (File System Access API).</p>
-                )}
                 <div className="flex gap-1">
                   <Button
                     variant={streamFormat === 'csv' ? 'primary' : 'outline'}
@@ -974,7 +969,7 @@ export default function App() {
             variant="primary"
             size="md"
             onClick={generateData}
-            disabled={isGenerating || selectedColumns.size === 0 || (isLarge && !streamSupported)}
+            disabled={isGenerating || selectedColumns.size === 0}
           >
             <RefreshCw size={ICON.label} className={isGenerating ? 'animate-spin' : ''} />
             {isGenerating

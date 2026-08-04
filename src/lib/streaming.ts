@@ -1,4 +1,10 @@
+import streamSaver from 'streamsaver';
 import type { LocaleId } from './locale';
+
+// Self-hosted mitm+service-worker (public/mitm.html, public/sw.js — vendored from the
+// streamsaver package) instead of its default third-party GitHub Pages iframe: keeps the
+// fallback download path same-origin, consistent with "nothing leaves your machine".
+streamSaver.mitm = '/mitm.html';
 
 export type StreamFormat = 'csv' | 'ndjson';
 
@@ -62,26 +68,45 @@ export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
   }).finally(() => { detach(); worker.terminate(); });
 }
 
-/** Stream-generate to a user-picked file. Worker generates+serializes; main thread writes. */
-export async function streamGenerateToFile(opts: StreamOptions): Promise<{ written: number }> {
-  if (!isStreamingSupported()) {
-    throw new Error(
-      'Your browser does not support the File System Access API. Use Chrome/Edge for >100k rows, or lower the count.'
-    );
-  }
+interface Sink {
+  write(text: string): Promise<void>;
+  close(): Promise<void>;
+}
 
-  const suggestedName = opts.format === 'csv' ? 'privacy_test_data.csv' : 'privacy_test_data.ndjson';
-  const fileHandle = await (window as any).showSaveFilePicker({
-    suggestedName,
-    types: [
-      opts.format === 'csv'
-        ? { description: 'CSV', accept: { 'text/csv': ['.csv'] } }
-        : { description: 'NDJSON', accept: { 'application/x-ndjson': ['.ndjson', '.jsonl'] } },
-    ],
-  });
-
-  const writable = await fileHandle.createWritable();
+/**
+ * Open a streaming write target for one file. Chrome/Edge get a native save-location
+ * picker (File System Access API). Everywhere else falls back to streamsaver — still a
+ * single streamed file (never buffered in full, never split into chunks), just delivered
+ * to the browser's default downloads folder instead of a chosen path.
+ */
+async function openSink(suggestedName: string, format: StreamFormat): Promise<Sink> {
   const encoder = new TextEncoder();
+  if (isStreamingSupported()) {
+    const fileHandle = await (window as any).showSaveFilePicker({
+      suggestedName,
+      types: [
+        format === 'csv'
+          ? { description: 'CSV', accept: { 'text/csv': ['.csv'] } }
+          : { description: 'NDJSON', accept: { 'application/x-ndjson': ['.ndjson', '.jsonl'] } },
+      ],
+    });
+    const writable = await fileHandle.createWritable();
+    return {
+      write: (text) => writable.write(encoder.encode(text)),
+      close: () => writable.close(),
+    };
+  }
+  const writer = streamSaver.createWriteStream(suggestedName).getWriter();
+  return {
+    write: (text) => writer.write(encoder.encode(text)),
+    close: () => writer.close(),
+  };
+}
+
+/** Stream-generate to a single file. Worker generates+serializes; main thread writes. */
+export async function streamGenerateToFile(opts: StreamOptions): Promise<{ written: number }> {
+  const suggestedName = opts.format === 'csv' ? 'privacy_test_data.csv' : 'privacy_test_data.ndjson';
+  const sink = await openSink(suggestedName, opts.format);
   const worker = newWorker();
   const detach = wireAbort(worker, opts.signal);
   let written = 0;
@@ -92,7 +117,7 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
         const m = e.data;
         try {
           if (m.type === 'header' || m.type === 'chunk') {
-            await writable.write(encoder.encode(m.text));
+            await sink.write(m.text);
           } else if (m.type === 'progress') {
             written = m.done;
             opts.onProgress?.(m.done, m.total);
@@ -121,7 +146,7 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
   } finally {
     detach();
     worker.terminate();
-    await writable.close();
+    await sink.close();
   }
   return { written };
 }
