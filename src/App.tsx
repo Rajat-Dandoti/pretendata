@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github } from 'lucide-react';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, TIER_CHIP } from './lib/ui';
@@ -7,7 +7,7 @@ import { exportCSV, exportJSON, exportPresetConfig, downloadManifest } from './l
 import { JsonStructure } from './lib/nesting';
 import { RunMeta, GenMode } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
-import { streamGenerateToFile, isStreamingSupported, StreamFormat, generateInWorker } from './lib/streaming';
+import { streamGenerateToFile, StreamFormat, generateInWorker } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION } from './lib/share';
 import { LOCALES, LocaleId, getFaker } from './lib/locale';
 import ColumnReference from './components/ColumnReference';
@@ -86,7 +86,6 @@ export default function App() {
   const [showCompliance, setShowCompliance] = useState(false);
   const [complianceEnabled, setComplianceEnabled] = useState(true);
   const complianceRef = useRef<HTMLDivElement>(null);
-  const streamSupported = isStreamingSupported();
   const isLarge = rowCount > IN_MEMORY_THRESHOLD;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -445,9 +444,7 @@ export default function App() {
             {isLarge && (
               <div className="mt-2 space-y-2 p-2.5 rounded-md bg-amber-50 border border-amber-200">
                 <p className="text-[11px] text-amber-800 leading-snug">
-                  <strong>Large dataset:</strong> {streamSupported
-                    ? "Will stream directly to a file you pick."
-                    : "Will stream straight to your downloads folder (your browser can't prompt for a save location)."} Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
+                  <strong>Large dataset:</strong> Will stream directly to a file. Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
                 </p>
                 <div className="flex gap-1">
                   <Button
@@ -1054,6 +1051,17 @@ export default function App() {
       </div>
 
       {showReference && <ColumnReference onClose={() => setShowReference(false)} locale={locale} />}
+
+      <a
+        href="https://github.com/Rajat-Dandoti/pretendata"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fixed bottom-6 right-6 z-40 p-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+        aria-label="View source on GitHub"
+        title="View source on GitHub"
+      >
+        <Github size={24} />
+      </a>
 
       {toast && (
         <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
