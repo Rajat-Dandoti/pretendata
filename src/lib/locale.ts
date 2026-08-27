@@ -26,10 +26,13 @@ export const ALL_FAKERS: Faker[] = Object.values(FAKERS);
 
 const NON_MIX_IDS = Object.keys(FAKERS) as Exclude<LocaleId, 'mix'>[];
 
+/** Resolves 'mix' to a concrete locale (random per call); everything else passes through. */
+export function resolveLocale(locale: LocaleId): Exclude<LocaleId, 'mix'> {
+  if (locale === 'mix') return NON_MIX_IDS[Math.floor(Math.random() * NON_MIX_IDS.length)];
+  return locale;
+}
+
 /** Returns the Faker instance for a locale. For 'mix', picks one at random per call. */
 export function getFaker(locale: LocaleId): Faker {
-  if (locale === 'mix') {
-    return FAKERS[NON_MIX_IDS[Math.floor(Math.random() * NON_MIX_IDS.length)]];
-  }
-  return FAKERS[locale] ?? faker;
+  return FAKERS[resolveLocale(locale)] ?? faker;
 }

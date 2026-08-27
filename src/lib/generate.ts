@@ -2,7 +2,7 @@
 // Keep this free of DOM/worker globals so both consumers can import it.
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed } from './seed';
-import { getFaker, LocaleId } from './locale';
+import { getFaker, resolveLocale, LocaleId } from './locale';
 
 export function csvEscape(val: any): string {
   if (val === null || val === undefined) return '';
@@ -15,7 +15,9 @@ export function csvEscape(val: any): string {
 
 /** Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx. */
 export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): Record<string, any> {
-  const f = getFaker(locale);
+  // 'mix' is resolved once per row so the phone number matches the row's name/address.
+  const rowLocale = resolveLocale(locale);
+  const f = getFaker(rowLocale);
   const dob = f.date.birthdate({ min: 18, max: 80, mode: 'age' });
   const fctx: any = {
     firstName: f.person.firstName(),
@@ -24,6 +26,7 @@ export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): 
     dob,
     age: new Date().getFullYear() - dob.getFullYear(),
     faker: f,
+    locale: rowLocale,
   };
   const row: Record<string, any> = {};
   for (const col of cols) {

@@ -56,7 +56,7 @@ Emitted into the export **manifest sidecar** so a test harness knows what guaran
 |---|---|---|---|---|
 | First / Last Name | `firstName` `lastName` | locale | free-form | Faker person, locale-aware |
 | Email | `email` | — | pattern-only | Faker, derived from first/last name |
-| Phone | `phone` | locale | pattern-only | Faker national-style |
+| Phone (mobile) | `phone` | locale | pattern-only | Real mobile prefixes per locale, random local format. IN: 10 digits starting 6–9 as `+91 98765 43210` / `+91…` / `91…` / `098765 43210` / bare. US: NANPA `(NXX) NXX-XXXX`. DE 015x/016x/017x · ES 6xx/7xx · FR 06/07 · JP 070/080/090 |
 | SSN | `ssn` | US | pattern-only | `AAA-GG-SSSS`; area ≠ 000/666/900-999, group ≠ 00, serial ≠ 0000 |
 | Aadhaar | `aadhaar` | IN | **verhoeff** | 12 digits, first 2–9, Verhoeff check digit |
 | PAN | `pan` | IN | pattern-only | `AAAAA9999A`; 4th char = entity type, 5th = surname initial |

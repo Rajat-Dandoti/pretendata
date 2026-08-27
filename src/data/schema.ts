@@ -6,7 +6,9 @@ import {
   generateDLGermany, generateVIN, generateIMEI, generateEAN13, generateISIN,
   generateNHSNumber, generateDEA, breakChecksum,
   generateUPI, generateVoterId, generateVehicleRegIndia, generateIFSC, generateABHA, generateIqama,
+  generateMobile,
 } from '../lib/validators';
+import type { LocaleId } from '../lib/locale';
 
 export type PrivacyCategory = 'PII' | 'PHI' | 'PCI' | 'Secrets' | 'Biometric' | 'Network' | 'Quasi-Identifier' | 'Statistical' | 'Masked' | 'Non-Sensitive' | 'DLP-Negative' | 'Chaos';
 
@@ -59,7 +61,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'firstName', name: 'First Name', category: 'PII', generate: (ctx) => ctx.firstName, defaultSelected: true },
   { id: 'lastName', name: 'Last Name', category: 'PII', generate: (ctx) => ctx.lastName, defaultSelected: true },
   { id: 'email', name: 'Email Address', category: 'PII', generate: (ctx) => (ctx.faker ?? faker).internet.email({ firstName: ctx.firstName, lastName: ctx.lastName }), defaultSelected: true },
-  { id: 'phone', name: 'Phone Number', category: 'PII', generate: (ctx) => (ctx.faker ?? faker).phone.number({ style: 'national' }), defaultSelected: true },
+  { id: 'phone', name: 'Phone Number', category: 'PII', generate: (ctx) => generateMobile(ctx.locale), defaultSelected: true },
   { id: 'ssn', name: 'SSN', category: 'PII', generate: () => generateSSN(), defaultSelected: false },
   { id: 'aadhaar', name: 'Aadhaar (IN)', category: 'PII', generate: () => generateAadhaar(), defaultSelected: false },
   { id: 'pan', name: 'PAN (IN)', category: 'PII', generate: () => generatePAN(), defaultSelected: false },
@@ -314,4 +316,16 @@ export const PRESETS: Record<string, string[]> = {
   'India Fintech': ['firstName', 'lastName', 'pan', 'aadhaar', 'upiId', 'ifsc', 'accountNumber', 'creditScore', 'loanAmount', 'phone', 'email'],
   'US Healthcare': ['firstName', 'lastName', 'ssn', 'mrn', 'npi', 'dea', 'healthInsuranceId', 'bloodType', 'diagnosisCode', 'dob', 'gender'],
   'EU GDPR Sweep': ['firstName', 'lastName', 'iban', 'dlGermany', 'dlUK', 'email', 'phone', 'ipAddress', 'macAddress', 'dob', 'city'],
+};
+
+/**
+ * Presets that also switch the locale, so names/addresses/phone match the region
+ * the preset is about (an "India PII" sheet with US phone numbers is useless).
+ * The user can still change the locale afterwards.
+ */
+export const PRESET_LOCALES: Record<string, LocaleId> = {
+  'India PII': 'en_IN',
+  'India Fintech': 'en_IN',
+  'US Healthcare': 'en',
+  'EU GDPR Sweep': 'de',
 };

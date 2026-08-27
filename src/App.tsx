@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github } from 'lucide-react';
-import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS } from './data/schema';
+import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, TIER_CHIP } from './lib/ui';
 import { exportCSV, exportJSON, exportPresetConfig, downloadManifest } from './lib/exporters';
@@ -9,7 +9,9 @@ import { RunMeta, GenMode } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
 import { streamGenerateToFile, StreamFormat, generateInWorker } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION } from './lib/share';
-import { LOCALES, LocaleId, getFaker } from './lib/locale';
+import { LOCALES, LocaleId } from './lib/locale';
+import { makeRow } from './lib/generate';
+import { applySeed } from './lib/seed';
 import ColumnReference from './components/ColumnReference';
 
 // ponytail: no more per-row left border — accent moved to a card around the whole category.
@@ -197,26 +199,10 @@ export default function App() {
   const livePreview = useMemo(() => {
     if (selectedColumns.size === 0) return [];
     const cols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
-    const f = getFaker(locale);
-    if (seedNum !== null) f.seed(seedNum);
-    const rows: any[] = [];
-    for (let i = 0; i < 5; i++) {
-      const dob = f.date.birthdate({ min: 18, max: 80, mode: 'age' });
-      const fctx: any = {
-        firstName: f.person.firstName(),
-        lastName: f.person.lastName(),
-        gender: f.person.sex(),
-        dob,
-        age: new Date().getFullYear() - dob.getFullYear(),
-        faker: f,
-      };
-      const row: Record<string, any> = {};
-      for (const col of cols) {
-        row[col.id] = sparsity > 0 && Math.random() < sparsity / 100 ? null : col.generate(fctx);
-      }
-      rows.push(row);
-    }
-    return rows;
+    // ponytail: reuse makeRow — the preview was a copy of it that drifted (it never
+    // seeded Math.random, so checksum columns ignored the seed).
+    applySeed(seedNum);
+    return Array.from({ length: 5 }, () => makeRow(cols, sparsity, locale));
   }, [selectedColumns, locale, sparsity, seedNum]);
 
   // ponytail: crude est ≈ cols × 22 B/cell for CSV, worker throughput ≈ 60k rows/s. Good enough.
@@ -256,6 +242,8 @@ export default function App() {
     setSelectedPreset(presetName);
     if (presetName !== 'Custom' && PRESETS[presetName]) {
       setSelectedColumns(new Set(PRESETS[presetName]));
+      // Region-focused presets carry their locale, so phone/name/address match the region.
+      if (PRESET_LOCALES[presetName]) setLocale(PRESET_LOCALES[presetName]);
       setGeneratedData([]);
     }
   };
@@ -485,7 +473,7 @@ export default function App() {
             <label className={cn(T.label, 'flex items-center gap-2')}>
               <Globe size={ICON.label} className="text-slate-400" />
               Locale
-              <Tip text="Affects names, addresses, phone, and job-related fields. Region-specific identifiers (Aadhaar, NHS, SSN…) keep their fixed locale.">
+              <Tip text="Affects names, addresses, mobile numbers, and job-related fields. Mobile numbers use real prefixes and formats for the region. Region-focused presets (India PII, US Healthcare…) set this for you. Region-specific identifiers (Aadhaar, NHS, SSN…) keep their fixed locale.">
                 <Info size={ICON.micro} className="text-slate-400" />
               </Tip>
             </label>

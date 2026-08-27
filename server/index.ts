@@ -5,7 +5,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PRESETS } from '../src/data/schema';
+import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PRESETS, PRESET_LOCALES } from '../src/data/schema';
 import { frameworksFor } from '../src/lib/frameworks';
 import { generateRows, rowsToCSV } from '../src/lib/generate';
 import { nestRows, JsonStructure } from '../src/lib/nesting';
@@ -67,7 +67,10 @@ function resolveGenerate(body: GenBody): { error: string } | { columnIds: string
   const sparsity = Number(body.sparsity ?? 0);
   if (!Number.isFinite(sparsity) || sparsity < 0 || sparsity > 100) return { error: 'sparsity must be 0–100' };
 
-  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale: body.locale });
+  // Region-focused presets carry a locale, same as the UI. An explicit `locale` still wins.
+  const locale = body.locale ?? (body.preset ? PRESET_LOCALES[body.preset] : undefined);
+
+  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale });
   return { columnIds, rows };
 }
 

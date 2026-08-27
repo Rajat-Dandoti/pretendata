@@ -216,6 +216,115 @@ export function generateIqama(): string {
   return body + luhnCheckDigit(body);
 }
 
+// ---------- Mobile numbers, per locale ----------
+// ponytail: Faker's national-style phone is landline-shaped and fails real mobile
+// regexes (en_IN emits "06103 325 246" — 11 digits, leading 0; no Indian mobile
+// looks like that). So: real operator prefixes + the ways people actually write them.
+//
+// India (NNP): mobile is exactly 10 digits starting 6/7/8/9. Written as +91 / 91 /
+//   leading-0 trunk / bare. Matches ^(\+?91|0)?[6-9]\d{9}$.
+// US (NANPA): area + exchange are NXX (N = 2-9) and never N11.
+// DE: 15x/16x/17x mobile blocks; ES: 6xx/7xx; FR: 06/07; JP: 070/080/090.
+
+/** Split `n` into groups of the given sizes (remainder becomes a final group). */
+function group(n: string, sizes: number[], sep = ' '): string {
+  const out: string[] = [];
+  let i = 0;
+  for (const s of sizes) { out.push(n.slice(i, i + s)); i += s; }
+  if (i < n.length) out.push(n.slice(i));
+  return out.join(sep);
+}
+
+const nanpaNxx = () => {
+  let s: string;
+  do { s = `${2 + rand(8)}${digits(2)}`; } while (s[1] === '1' && s[2] === '1');
+  return s;
+};
+
+type MobileSpec = {
+  cc: string;
+  /** National significant number — no trunk prefix, no country code. */
+  nsn: () => string;
+  /** How the same number gets written in the wild. One is picked at random. */
+  styles: ((n: string, cc: string) => string)[];
+};
+
+const MOBILES: Record<string, MobileSpec> = {
+  en: {
+    cc: '+1',
+    nsn: () => nanpaNxx() + nanpaNxx() + digits(4),
+    styles: [
+      n => `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}`,
+      n => group(n, [3, 3], '-'),
+      (n, cc) => `${cc} ${group(n, [3, 3], '-')}`,
+      n => n,
+    ],
+  },
+  en_IN: {
+    cc: '+91',
+    nsn: () => pick(['6', '7', '8', '9']) + digits(9),
+    styles: [
+      (n, cc) => `${cc} ${group(n, [5])}`,   // +91 98765 43210
+      (n, cc) => `${cc}${n}`,                // +919876543210
+      n => `91${n}`,                         // 919876543210
+      n => `0${group(n, [5])}`,              // 098765 43210
+      n => group(n, [5]),                    // 98765 43210
+      n => n,                                // 9876543210
+    ],
+  },
+  de: {
+    cc: '+49',
+    nsn: () => {
+      const p = pick(['151', '152', '155', '157', '159', '160', '162', '163',
+                      '170', '171', '172', '173', '174', '175', '176', '177', '178', '179']);
+      return p + digits(p.startsWith('15') ? 8 : 7);
+    },
+    styles: [
+      (n, cc) => `${cc} ${group(n, [3])}`,
+      (n, cc) => `${cc}${n}`,
+      n => `0${group(n, [3])}`,
+      n => `0${n}`,
+    ],
+  },
+  es: {
+    cc: '+34',
+    nsn: () => pick(['6', '7']) + digits(8),
+    styles: [
+      (n, cc) => `${cc} ${group(n, [3, 2, 2])}`,
+      (n, cc) => `${cc}${n}`,
+      n => group(n, [3, 2, 2]),
+      n => n,
+    ],
+  },
+  fr: {
+    cc: '+33',
+    nsn: () => pick(['6', '7']) + digits(8),
+    styles: [
+      n => group('0' + n, [2, 2, 2, 2]),                       // 06 12 34 56 78
+      (n, cc) => `${cc} ${n[0]} ${group(n.slice(1), [2, 2, 2])}`,
+      (n, cc) => `${cc}${n}`,
+    ],
+  },
+  ja: {
+    cc: '+81',
+    nsn: () => pick(['70', '80', '90']) + digits(8),
+    styles: [
+      n => `0${group(n, [2, 4], '-')}`,                        // 090-1234-5678
+      (n, cc) => `${cc} ${group(n, [2, 4], '-')}`,
+      (n, cc) => `${cc}${n}`,
+    ],
+  },
+};
+
+const MOBILE_IDS = Object.keys(MOBILES);
+
+/** A realistic mobile number for `locale` ('mix' → a random one), in a randomly chosen local format. */
+export function generateMobile(locale = 'en'): string {
+  const spec = MOBILES[locale === 'mix' ? pick(MOBILE_IDS) : locale] ?? MOBILES.en;
+  const n = spec.nsn();
+  return pick(spec.styles)(n, spec.cc);
+}
+
 // ---------- near-miss: mutate last alphanumeric char so checksum fails ----------
 // ponytail: positional mutation is enough — every checksum we use treats the last
 // char as either the check digit itself or a weighted body digit (weight != 0).
@@ -286,6 +395,30 @@ export function _selfCheck() {
   const iq = generateIqama();
   assert(/^2\d{9}$/.test(iq), 'Iqama format');
   { let s = 0, dbl = false; for (let i = iq.length - 1; i >= 0; i--) { let d = +iq[i]; if (dbl) { d *= 2; if (d > 9) d -= 9; } s += d; dbl = !dbl; } assert(s % 10 === 0, 'Iqama Luhn'); }
+  // Mobile numbers: every format a locale can emit must match that locale's real shape.
+  const MOBILE_RE: Record<string, RegExp> = {
+    en:    /^(\+1 )?(\(\d{3}\) \d{3}-\d{4}|\d{3}-\d{3}-\d{4}|\d{10})$/,
+    en_IN: /^(\+?91[ ]?|0)?[6-9]\d{4} ?\d{5}$/,
+    de:    /^(\+49 ?|0)1[567]\d ?\d{7,8}$/,
+    es:    /^(\+34 ?)?[67]\d{2} ?\d{2} ?\d{2} ?\d{2}$/,
+    fr:    /^(\+33 [67]( \d{2}){4}|0[67]( \d{2}){4}|\+33[67]\d{8})$/,
+    ja:    /^(\+81 ?|0)?(70|80|90)-?\d{4}-?\d{4}$/,
+  };
+  for (const [loc, re] of Object.entries(MOBILE_RE)) {
+    for (let i = 0; i < 300; i++) {
+      const m = generateMobile(loc);
+      assert(re.test(m), `mobile ${loc} shape: ${m}`);
+      // digits-only form must be the same number regardless of how it was written
+      assert(m.replace(/\D/g, '').length >= 9, `mobile ${loc} length: ${m}`);
+    }
+  }
+  // India: whatever the format, the subscriber number is 10 digits starting 6–9.
+  for (let i = 0; i < 300; i++) {
+    const d = generateMobile('en_IN').replace(/\D/g, '');
+    const raw = d.length > 10 ? d.replace(/^(91|0)/, '') : d;  // careful: 91xxxxxxxx is also a valid bare number
+    assert(/^[6-9]\d{9}$/.test(raw), `IN mobile subscriber number: ${raw}`);
+  }
+  assert(/^(\+1 )?(\(\d{3}\) \d{3}-\d{4}|\d{3}-\d{3}-\d{4}|\d{10})$/.test(generateMobile('nope')), 'unknown locale falls back to en');
   // near-miss: regex-shaped but checksum fails
   const badA = breakChecksum(generateAadhaar());
   assert(/^[2-9]\d{11}$/.test(badA), 'bad Aadhaar still regex-shaped');
