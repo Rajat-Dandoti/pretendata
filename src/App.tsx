@@ -24,12 +24,12 @@ function Tip({ text, children }: { text: string; children: React.ReactNode }) {
 }
 
 const MIN_ROWS = 10;
-const MAX_ROWS = 10_000_000;
+const MAX_ROWS = 100_000_000;
 const IN_MEMORY_THRESHOLD = 100_000;
 
-// ponytail: pure log10 range 10..10M → slider 0..600. Every decade = 100 slider units,
-// so 10, 1k, 100k, 10M land at exactly 0/200/400/600 (0%, 33%, 66%, 100%).
-const SLIDER_MAX = 600; // 6 decades × 100
+// ponytail: pure log10 range 10..100M → slider 0..700. Every decade = 100 slider units,
+// so each decade label (10, 100, 1k … 100M) lands on an exact multiple of 100.
+const SLIDER_MAX = 700; // 7 decades × 100
 function sliderToRows(v: number): number {
   const raw = Math.pow(10, 1 + v / 100);
   // Snap to 1/2/5 × 10^n for readable round values.
@@ -38,10 +38,10 @@ function sliderToRows(v: number): number {
   const snaps = [1, 2, 5, 10];
   let best = 1, bd = Infinity;
   for (const s of snaps) { const d = Math.abs(s - norm); if (d < bd) { bd = d; best = s; } }
-  return Math.max(10, Math.min(10_000_000, Math.round(best * mag)));
+  return Math.max(MIN_ROWS, Math.min(MAX_ROWS, Math.round(best * mag)));
 }
 function rowsToSlider(rows: number): number {
-  const clamped = Math.max(10, Math.min(10_000_000, rows));
+  const clamped = Math.max(MIN_ROWS, Math.min(MAX_ROWS, rows));
   return Math.round(100 * (Math.log10(clamped) - 1));
 }
 function formatRows(n: number): string {
@@ -209,7 +209,8 @@ export default function App() {
   const estimate = useMemo(() => {
     const cells = rowCount * selectedColumns.size;
     const bytes = cells * 22;
-    const sizeStr = bytes > 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB`
+    const sizeStr = bytes > 1_000_000_000 ? `${(bytes / 1_000_000_000).toFixed(1)} GB`
+      : bytes > 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB`
       : bytes > 1_000 ? `${(bytes / 1_000).toFixed(0)} KB`
       : `${bytes} B`;
     const secs = rowCount / 60_000;
@@ -423,11 +424,13 @@ export default function App() {
               onChange={(e) => setRowCount(sliderToRows(parseInt(e.target.value)))}
               className="w-full accent-indigo-600"
             />
-            <div className="relative h-4 text-xs text-slate-400 font-mono">
-              <span className="absolute left-0">10</span>
-              <span className="absolute left-1/3 -translate-x-1/2">1k</span>
-              <span className="absolute left-2/3 -translate-x-1/2">100k</span>
-              <span className="absolute right-0">10M</span>
+            {/* One label per decade. The thumb's centre travels from half-a-thumb in to
+                half-a-thumb short of the end, so the row is inset by that much (8px; Firefox's
+                thumb is 20px → 10px) and each label is centred on a zero-width slot. */}
+            <div className="flex justify-between px-2 supports-[-moz-appearance:none]:px-[10px] h-4 text-[10px] text-slate-400 font-mono">
+              {['10', '100', '1k', '10k', '100k', '1M', '10M', '100M'].map(t => (
+                <span key={t} className="w-0 flex justify-center">{t}</span>
+              ))}
             </div>
             {isLarge && (
               <div className="mt-2 space-y-2 p-2.5 rounded-md bg-amber-50 border border-amber-200">
