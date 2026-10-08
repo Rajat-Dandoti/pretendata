@@ -27,7 +27,8 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Nested-JSON export** — flat, grouped-by-category, semantic record, or deep-nested N levels
   (to test whether a classifier traverses nested structures).
 - Chaos / malformed preset, dataset risk summary, reproducible **seeds**, sparsity (null injection),
-  locale support, shareable config links, and large-dataset streaming to a single file in any browser.
+  locale support, shareable config links, and large-dataset streaming (up to 100M rows) to a single
+  file in any browser.
 - Responsive layout — off-canvas sidebars on mobile, collapsible panels on desktop.
 - Export to **CSV / JSON / NDJSON** with an optional DLP manifest sidecar.
 
@@ -39,6 +40,21 @@ npm run dev
 ```
 
 Open the local URL it prints (e.g. `http://localhost:3000`). That's it — the app is fully client-side.
+
+## Large datasets (>100k rows)
+
+Above 100k rows the app skips the in-memory preview and streams straight to one CSV/NDJSON file:
+
+- **Parallel generation** — a pool of Web Workers (up to 8, one core left free) generates chunks that
+  are written in order. Speed depends mostly on how many columns are selected.
+- **Periodic saves (Chrome / Edge)** — the file you picked is committed about every 30 seconds, less
+  often as it grows, so a reload or crash only loses the rows since the last save. Each save may
+  briefly need extra free disk space. Other browsers stream through their normal download instead.
+- **Keep the tab open** — the browser asks before a reload or close mid-run. Sleep pauses the run. For
+  multi-hour runs prefer `npm run build && npm run preview` (or the live demo) over `npm run dev`,
+  whose dev server reloads the page when it reconnects.
+- **Seeds** — streamed output is seeded per 5,000-row chunk, so the same seed and row count always
+  reproduce the same file. Seeded files above 100k rows made before this scheme do not match.
 
 ## Scripts
 
