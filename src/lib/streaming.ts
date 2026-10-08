@@ -1,5 +1,7 @@
 import streamSaver from 'streamsaver';
 import type { LocaleId } from './locale';
+import { AVAILABLE_COLUMNS } from '../data/schema';
+import { csvEscape, STREAM_CHUNK_ROWS } from './generate';
 
 // Self-hosted mitm+service-worker (public/mitm.html, public/sw.js — vendored from the
 // streamsaver package) instead of its default third-party GitHub Pages iframe: keeps the
@@ -69,8 +71,15 @@ export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
 }
 
 interface Sink {
-  write(text: string): Promise<void>;
+  write(bytes: Uint8Array): Promise<void>;
   close(): Promise<void>;
+}
+
+const CHECKPOINT_MIN_MS = 30_000;
+
+/** Workers used for a streamed run: leave one core for the page, cap at 8. */
+export function streamPoolSize(): number {
+  return Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
 }
 
 /**
@@ -80,7 +89,6 @@ interface Sink {
  * to the browser's default downloads folder instead of a chosen path.
  */
 async function openSink(suggestedName: string, format: StreamFormat): Promise<Sink> {
-  const encoder = new TextEncoder();
   if (isStreamingSupported()) {
     const fileHandle = await (window as any).showSaveFilePicker({
       suggestedName,
@@ -90,63 +98,126 @@ async function openSink(suggestedName: string, format: StreamFormat): Promise<Si
           : { description: 'NDJSON', accept: { 'application/x-ndjson': ['.ndjson', '.jsonl'] } },
       ],
     });
-    const writable = await fileHandle.createWritable();
+    let writable = await fileHandle.createWritable();
+    let size = 0;
+    let lastCheckpoint = performance.now();
+    let checkpointCost = 0;
     return {
-      write: (text) => writable.write(encoder.encode(text)),
+      async write(bytes) {
+        await writable.write(bytes);
+        size += bytes.byteLength;
+        // Chrome writes to a hidden swap file and only moves it onto the picked file at
+        // close(), so a tab that reloads or dies mid-run leaves 0 bytes. Checkpoint = close
+        // (commits everything so far) + reopen at the end of the file.
+        // ponytail: a checkpoint costs O(file size) (Chrome re-scans the file, and may copy
+        // it → up to 2× disk), so they are spaced ≥10× the last one's duration (~10% overhead
+        // cap). If that hurts on huge files, write numbered part files into a folder instead.
+        if (performance.now() - lastCheckpoint >= Math.max(CHECKPOINT_MIN_MS, checkpointCost * 10)) {
+          const t = performance.now();
+          await writable.close();
+          writable = await fileHandle.createWritable({ keepExistingData: true });
+          await writable.seek(size);
+          lastCheckpoint = performance.now();
+          checkpointCost = lastCheckpoint - t;
+        }
+      },
       close: () => writable.close(),
     };
   }
   const writer = streamSaver.createWriteStream(suggestedName).getWriter();
   return {
-    write: (text) => writer.write(encoder.encode(text)),
+    write: (bytes) => writer.write(bytes),
     close: () => writer.close(),
   };
 }
 
-/** Stream-generate to a single file. Worker generates+serializes; main thread writes. */
+/**
+ * Stream-generate to a single file. A pool of workers generates independently-seeded
+ * chunks in parallel; the main thread writes them strictly in chunk order.
+ */
 export async function streamGenerateToFile(opts: StreamOptions): Promise<{ written: number }> {
   const suggestedName = opts.format === 'csv' ? 'privacy_test_data.csv' : 'privacy_test_data.ndjson';
   const sink = await openSink(suggestedName, opts.format);
-  const worker = newWorker();
-  const detach = wireAbort(worker, opts.signal);
+  const totalChunks = Math.ceil(opts.rowCount / STREAM_CHUNK_ROWS);
+  const poolSize = Math.min(totalChunks, streamPoolSize());
+  const workers = Array.from({ length: poolSize }, newWorker);
   let written = 0;
+  let stopped = false;
 
   try {
+    if (opts.format === 'csv') {
+      const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
+      await sink.write(new TextEncoder().encode(cols.map(c => csvEscape(c.name)).join(',') + '\n'));
+    }
     await new Promise<void>((resolve, reject) => {
-      worker.onmessage = async (e) => {
-        const m = e.data;
+      const ready = new Map<number, Uint8Array>(); // finished chunks waiting for their turn
+      const idle = [...workers];
+      let nextJob = 0;
+      let nextWrite = 0;
+      let writing = false;
+
+      // Backpressure: chunks generated but not yet on disk never exceed 2× the pool, so
+      // memory stays flat no matter how slow the disk is.
+      const dispatch = () => {
+        while (!stopped && idle.length && nextJob < totalChunks && nextJob - nextWrite < poolSize * 2) {
+          const chunk = nextJob++;
+          const rows = Math.min(STREAM_CHUNK_ROWS, opts.rowCount - chunk * STREAM_CHUNK_ROWS);
+          idle.pop()!.postMessage({ type: 'job', chunk, rows });
+        }
+      };
+      const drain = async () => {
+        if (writing) return;
+        writing = true;
         try {
-          if (m.type === 'header' || m.type === 'chunk') {
-            await sink.write(m.text);
-          } else if (m.type === 'progress') {
-            written = m.done;
-            opts.onProgress?.(m.done, m.total);
-          } else if (m.type === 'done') {
-            resolve();
-          } else if (m.type === 'cancelled') {
-            reject(new Error('Cancelled'));
+          for (let bytes; !stopped && (bytes = ready.get(nextWrite)); ) {
+            ready.delete(nextWrite);
+            await sink.write(bytes);
+            nextWrite++;
+            written = Math.min(opts.rowCount, nextWrite * STREAM_CHUNK_ROWS);
+            opts.onProgress?.(written, opts.rowCount);
+            dispatch();
+          }
+          if (nextWrite === totalChunks) resolve();
+        } catch (err) {
+          reject(err as Error);
+        } finally {
+          writing = false;
+        }
+      };
+
+      if (opts.signal?.aborted) return reject(new Error('Cancelled'));
+      opts.signal?.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
+      for (const w of workers) {
+        w.onmessage = (e) => {
+          const m = e.data;
+          if (m.type === 'chunk') {
+            ready.set(m.chunk, m.bytes);
+            idle.push(w);
+            dispatch();
+            void drain();
           } else if (m.type === 'error') {
             reject(new Error(m.message));
           }
-        } catch (err) {
-          reject(err as Error);
-        }
-      };
-      worker.onerror = (e) => reject(new Error(e.message));
-      worker.postMessage({
-        type: 'stream',
-        columnIds: opts.columnIds,
-        rowCount: opts.rowCount,
-        sparsity: opts.sparsity,
-        seed: opts.seed,
-        format: opts.format,
-        locale: opts.locale,
-      });
+        };
+        w.onerror = (e) => reject(new Error(e.message));
+        w.postMessage({
+          type: 'init',
+          columnIds: opts.columnIds,
+          sparsity: opts.sparsity,
+          seed: opts.seed,
+          format: opts.format,
+          locale: opts.locale,
+        });
+      }
+      dispatch();
     });
-  } finally {
-    detach();
-    worker.terminate();
-    await sink.close();
+  } catch (err) {
+    stopped = true;
+    workers.forEach(w => w.terminate());
+    await sink.close().catch(() => {}); // keep what was written; report the original error
+    throw err;
   }
+  workers.forEach(w => w.terminate());
+  await sink.close();
   return { written };
 }

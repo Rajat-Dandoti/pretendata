@@ -7,7 +7,7 @@ import { exportCSV, exportJSON, exportPresetConfig, downloadManifest } from './l
 import { JsonStructure } from './lib/nesting';
 import { RunMeta, GenMode } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
-import { streamGenerateToFile, StreamFormat, generateInWorker } from './lib/streaming';
+import { streamGenerateToFile, StreamFormat, generateInWorker, streamPoolSize } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION } from './lib/share';
 import { LOCALES, LocaleId } from './lib/locale';
 import { makeRow } from './lib/generate';
@@ -98,6 +98,15 @@ export default function App() {
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
+
+  // A reload or closed tab mid-run kills the stream (and the dev server reloads the page by
+  // itself after the laptop sleeps), so make the browser ask before leaving.
+  useEffect(() => {
+    if (!isGenerating) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isGenerating]);
 
   // Close the compliance popover on outside click.
   useEffect(() => {
@@ -205,7 +214,8 @@ export default function App() {
     return Array.from({ length: 5 }, () => makeRow(cols, sparsity, locale));
   }, [selectedColumns, locale, sparsity, seedNum]);
 
-  // ponytail: crude est ≈ cols × 22 B/cell for CSV, worker throughput ≈ 60k rows/s. Good enough.
+  // ponytail: crude est ≈ cols × 22 B/cell for CSV; time ≈ 3µs/row + 1.5µs/cell per core
+  // (measured on an M-series laptop), split across the worker pool when streaming.
   const estimate = useMemo(() => {
     const cells = rowCount * selectedColumns.size;
     const bytes = cells * 22;
@@ -213,10 +223,10 @@ export default function App() {
       : bytes > 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB`
       : bytes > 1_000 ? `${(bytes / 1_000).toFixed(0)} KB`
       : `${bytes} B`;
-    const secs = rowCount / 60_000;
+    const secs = rowCount * (3 + selectedColumns.size * 1.5) / 1e6 / (isLarge ? streamPoolSize() : 1);
     const timeStr = secs < 1 ? '<1s' : secs < 60 ? `~${Math.ceil(secs)}s` : `~${(secs / 60).toFixed(1)}m`;
     return { sizeStr, timeStr };
-  }, [rowCount, selectedColumns.size]);
+  }, [rowCount, selectedColumns.size, isLarge]);
 
   const toggleCategoryCollapsed = (cat: string) => {
     setCollapsedCategories(prev => {

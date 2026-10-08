@@ -35,6 +35,38 @@ export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): 
   return row;
 }
 
+// ---------- streaming chunks (large datasets) ----------
+/** Rows per stream chunk. Part of the seed contract: changing it changes seeded output. */
+export const STREAM_CHUNK_ROWS = 5_000;
+
+/**
+ * Every chunk gets its own seed, so chunks can be generated on different workers, in any
+ * order, and the file still reproduces byte-for-byte from (seed, row count).
+ */
+export function chunkSeed(seed: number, chunk: number): number {
+  return (Math.imul(seed, 0x9E3779B1) + chunk) >>> 0;
+}
+
+export interface ChunkOptions {
+  seed: number | null;
+  chunk: number;
+  rows: number;
+  sparsity: number;
+  locale: LocaleId;
+  format: 'csv' | 'ndjson';
+}
+
+/** Serialized text of one stream chunk (no header). Unseeded runs keep the caller's entropy. */
+export function generateChunkText(cols: ColumnDef[], o: ChunkOptions): string {
+  if (o.seed !== null) applySeed(chunkSeed(o.seed, o.chunk));
+  let buf = '';
+  for (let i = 0; i < o.rows; i++) {
+    const r = makeRow(cols, o.sparsity, o.locale);
+    buf += (o.format === 'csv' ? cols.map(c => csvEscape(r[c.id])).join(',') : JSON.stringify(r)) + '\n';
+  }
+  return buf;
+}
+
 export interface GenerateOptions {
   columnIds: string[];
   rowCount: number;
@@ -83,5 +115,12 @@ export function _selfCheck() {
   const chaosCols = AVAILABLE_COLUMNS.filter(c => chaosIds.includes(c.id));
   const csv = rowsToCSV(c1, chaosCols);
   if (csv.split('\n')[0] !== 'SQL Injection,CSV Breaker') throw new Error('FAIL: chaos CSV header');
+  // stream chunks: a chunk depends only on (seed, chunk index), never on what ran before it.
+  const co = { seed: 42, rows: 4, sparsity: 20, locale: 'mix' as const, format: 'csv' as const };
+  const k3 = generateChunkText(cols, { ...co, chunk: 3 });
+  const k4 = generateChunkText(cols, { ...co, chunk: 4 });
+  if (generateChunkText(cols, { ...co, chunk: 3 }) !== k3) throw new Error('FAIL: chunk determinism');
+  if (k3 === k4) throw new Error('FAIL: chunks must differ');
+  if (k3.split('\n').length !== 5 || !k3.endsWith('\n')) throw new Error('FAIL: chunk row count');
   console.log('generate: all self-checks passed');
 }
