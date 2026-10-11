@@ -1048,11 +1048,11 @@ export default function App() {
             <Button
               size="md"
               onClick={() => setShowText(true)}
-              title="Generate emails, tickets, chat, clinical notes, logs and AI prompts with identifiers embedded in the text"
-              aria-label="Text and prompts"
+              title="Other kinds of test data: text and AI prompts with embedded identifiers, a repository with planted secrets, and related tables"
+              aria-label="More kinds of data"
             >
               <FileText size={ICON.label} />
-              <span className="hidden lg:inline">Text</span>
+              <span className="hidden lg:inline">More data</span>
             </Button>
             <Button
               size="md"

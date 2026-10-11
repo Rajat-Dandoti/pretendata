@@ -384,6 +384,24 @@ In JavaScript use `[...text].slice(start, end).join('')`.
 
 ---
 
+## Related tables
+
+*More data* panel → *Related tables* (or `pretendata tables`). Built by
+[`src/lib/relational.ts`](src/lib/relational.ts) from the same column generators.
+
+| Schema | Tables | A person's details are repeated in |
+|---|---|---|
+| `retail` | `customers` → `orders` → `payments` | the email on each order, the name on each payment |
+| `hospital` | `patients` → `visits` → `prescriptions` | the MRN on each visit; name and birth date on each prescription |
+| `bank` | `customers` → `accounts` → `transfers` | the SSN on each account, the email on each transfer |
+
+Every table has its own key (`order_id`), the keys of its ancestors (`customer_id`), and data columns
+named in snake_case after the catalog column they hold. The download has a CSV per table, `schema.sql`
+(the same data with `PRIMARY KEY` and `REFERENCES`), `answer-key.json` (what each column holds), and
+`subject-index.json`: for each person, every table and row that is theirs.
+
+---
+
 ## Secrets fixture repository
 
 *Text* panel → *Download zip*. Built by [`src/lib/fixtures.ts`](src/lib/fixtures.ts): three services

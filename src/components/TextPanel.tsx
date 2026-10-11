@@ -6,6 +6,7 @@ import { generateDocs, docsToNdjson, Doc, TextPack, TEXT_PACKS } from '../lib/te
 import { generateDocsInWorker } from '../lib/streaming';
 import { downloadText, downloadBlob } from '../lib/exporters';
 import { buildSecretsRepo, secretsRepoZip, SECRETS_ZIP_NAME } from '../lib/fixtures';
+import { generateRelated, relatedZip, relatedZipName, schemaInfo, SCHEMA_IDS, SchemaId } from '../lib/relational';
 import type { LocaleId } from '../lib/locale';
 import type { Formatting } from '../lib/variants';
 import { Button, Dropdown, T } from '../lib/ui';
@@ -45,6 +46,8 @@ export default function TextPanel({ onClose, seed, locale, formatting }: {
   const [count, setCount] = useState(1000);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [schema, setSchema] = useState<SchemaId>('retail');
+  const [people, setPeople] = useState(1000);
   // The first documents of exactly what Download will produce.
   const preview = useMemo(() => generateDocs({ pack, count: 4, seed, locale, formatting }), [pack, seed, locale, formatting]);
 
@@ -62,14 +65,15 @@ export default function TextPanel({ onClose, seed, locale, formatting }: {
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
-      <div className="bg-white w-full max-w-2xl h-full shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} role="dialog" aria-label="Text and prompts">
+      <div className="bg-white w-full max-w-2xl h-full shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} role="dialog" aria-label="More kinds of data">
         <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
-          <h2 className={T.h2}>Text &amp; prompts</h2>
-          <span className={cn(T.meta, 'ml-1')}>identifiers embedded in prose, with their positions</span>
+          <h2 className={T.h2}>More kinds of data</h2>
+          <span className={cn(T.meta, 'ml-1')}>text and prompts · a secrets repository · related tables</span>
           <button onClick={onClose} aria-label="Close" className="ml-auto p-1.5 text-slate-400 hover:text-slate-700"><X size={18} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4 min-h-0">
+          <span className={cn(T.label, 'block')}>Text and AI prompts</span>
           <p className={T.body}>
             Detectors for mail, chat, documents and AI assistants read text, not columns. Each line of the download is one
             document with an <code className="font-mono text-xs">entities</code> list — the answer key — giving the start, end, type and value of
@@ -121,6 +125,33 @@ export default function TextPanel({ onClose, seed, locale, formatting }: {
               onClick={() => downloadBlob(secretsRepoZip(buildSecretsRepo({ seed })), SECRETS_ZIP_NAME)}>
               <FolderArchive size={16} /> Download zip
             </Button>
+          </div>
+
+          <div className="border-t border-slate-200 pt-4 space-y-2">
+            <span className={cn(T.label, 'block')}>Related tables</span>
+            <p className={T.body}>
+              One set of people spread over several tables, as a real database holds them, with details repeated where a real system
+              repeats them. The zip has a CSV per table, the same data as one <code className="font-mono text-xs">schema.sql</code> with
+              primary and foreign keys, an answer key, and <code className="font-mono text-xs">subject-index.json</code> listing every row
+              that belongs to each person — the right answer to "find everything about this customer".
+            </p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1 w-44">
+                <span className={cn(T.meta, 'block')}>Schema</span>
+                <Dropdown<SchemaId> value={schema} onChange={setSchema} options={SCHEMA_IDS.map(s => ({ value: s, label: schemaInfo(s).label }))} />
+              </div>
+              <div className="space-y-1">
+                <label htmlFor="people-count" className={cn(T.meta, 'block')}>People</label>
+                <input id="people-count" type="number" min={1} max={50000} value={people}
+                  onChange={e => setPeople(Math.min(50000, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                  className="w-28 px-2 py-2.5 text-sm font-mono border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+              </div>
+              <Button size="md" aria-label="Download related tables"
+                onClick={() => { const o = { schema, people, seed, locale, formatting }; downloadBlob(relatedZip(generateRelated(o), o), relatedZipName(schema)); }}>
+                <FolderArchive size={16} /> Download zip
+              </Button>
+            </div>
+            <p className={T.meta}>{schemaInfo(schema).description} Tables: {schemaInfo(schema).tables.join(', ')}.</p>
           </div>
         </div>
       </div>

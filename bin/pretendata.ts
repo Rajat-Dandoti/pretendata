@@ -8,7 +8,8 @@
 //   pretendata text --pack prompt --count 500 --seed 7
 //   pretendata benchmark india --out india.csv --answer-key india.key.json
 //   pretendata list presets
-import { createWriteStream, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { AVAILABLE_COLUMNS, PRESETS, PRESET_LOCALES, expectationFor } from '../src/data/schema';
@@ -21,6 +22,7 @@ import { LOCALES, LocaleId } from '../src/lib/locale';
 import { buildManifest } from '../src/lib/manifest';
 import { JsonStructure, nestRows } from '../src/lib/nesting';
 import { docsToNdjson, generateDocs, TEXT_PACKS, TextPack } from '../src/lib/text';
+import { generateRelated, relatedFiles, SCHEMA_IDS, SchemaId } from '../src/lib/relational';
 import { FORMATTINGS, Formatting } from '../src/lib/variants';
 
 const HELP = `pretendata — synthetic, privacy-safe test data with a known answer key
@@ -28,6 +30,7 @@ const HELP = `pretendata — synthetic, privacy-safe test data with a known answ
 Usage
   pretendata [generate] [options]     tabular data (the default command)
   pretendata text [options]           prose with embedded identifiers, as NDJSON
+  pretendata tables [options]         related tables: one set of people across several tables
   pretendata benchmark <id>           a standard benchmark dataset (see: pretendata list benchmarks)
   pretendata list columns|presets|benchmarks
 
@@ -53,6 +56,12 @@ Text
   --pack <p>               ${TEXT_PACKS.join(' | ')} (default mixed)
   --count <n>              number of documents (default 100)
   --seed, --locale, --formatting, --out   as above
+
+Tables
+  --schema <s>             ${SCHEMA_IDS.join(' | ')} (default retail)
+  --people <n>             number of people (default 1000)
+  --out-dir <dir>          where to write a CSV per table, schema.sql, subject-index.json and answer-key.json
+  --seed, --locale, --formatting   as above
 
 Up to ${IN_MEMORY_THRESHOLD.toLocaleString()} rows the output matches the app's in-memory download; above that it
 matches the app's streamed file (seeded per ${STREAM_CHUNK_ROWS.toLocaleString()}-row chunk), byte for byte.`;
@@ -84,7 +93,7 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
         preset: { type: 'string' }, columns: { type: 'string' }, rows: { type: 'string' }, seed: { type: 'string' }, format: { type: 'string' },
         locale: { type: 'string' }, sparsity: { type: 'string' }, density: { type: 'string' }, formatting: { type: 'string' }, headers: { type: 'string' }, uniqueness: { type: 'string' },
         structure: { type: 'string' }, depth: { type: 'string' }, 'no-bom': { type: 'boolean' }, 'answer-key': { type: 'string' },
-        pack: { type: 'string' }, count: { type: 'string' }, help: { type: 'boolean', short: 'h' },
+        pack: { type: 'string' }, count: { type: 'string' }, schema: { type: 'string' }, people: { type: 'string' }, 'out-dir': { type: 'string' }, help: { type: 'boolean', short: 'h' },
       },
     });
     const [command = 'generate', what] = positionals;
@@ -108,6 +117,12 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
         seed, locale: oneOf(v.locale, localeIds, 'locale', 'en'), formatting,
       });
       await io.write(docsToNdjson(docs));
+      return 0;
+    }
+    if (command === 'tables') {
+      const dir = v['out-dir'] ?? fail('tables writes several files: give --out-dir <dir>');
+      const o = { schema: oneOf<SchemaId>(v.schema, SCHEMA_IDS, 'schema', 'retail'), people: integer(v.people, 'people', 1, 200_000, 1000), seed, locale: oneOf(v.locale, localeIds, 'locale', 'en'), formatting };
+      for (const f of relatedFiles(generateRelated(o), o)) io.writeFile(`${dir.replace(/\/$/, '')}/${f.name}`, f.data as string);
       return 0;
     }
     if (command === 'benchmark') {
@@ -188,7 +203,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const write = (chunk: string) => (stream.write(chunk) ? undefined : new Promise<void>(r => stream.once('drain', () => r())));
   // A closed pipe (`| head`) is a normal way to stop.
   process.stdout.on('error', e => { if ((e as NodeJS.ErrnoException).code === 'EPIPE') process.exit(0); });
-  main(argv, { write, writeFile: writeFileSync }).then(code => {
+  const writeFile = (path: string, content: string) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
+  main(argv, { write, writeFile }).then(code => {
     if (outPath) (stream as ReturnType<typeof createWriteStream>).end(() => process.exit(code));
     else process.exitCode = code;
   });

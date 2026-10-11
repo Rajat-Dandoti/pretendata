@@ -35,6 +35,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Text and AI prompts** — emails, support tickets, chat, clinical notes, log lines and prompts with
   identifiers embedded in the prose. Each document lists its entities (start, end, type, value) as its
   own answer key, for testing mail and chat DLP, entity recognisers and AI guardrails.
+- **Related tables** — retail, hospital or bank: one set of people across three tables with primary and
+  foreign keys, as CSVs and one SQL script, plus an index of every row that belongs to each person, for
+  database scanners and data-subject-request drills.
 - **Secrets fixture repository** — a zip of `.env`, YAML, source, SQL and key files with fake secrets
   planted in them and decoys beside them, plus an answer key with file and line, for Gitleaks-style
   scanners and pre-commit hooks.
@@ -180,6 +183,7 @@ the same bytes as the app's Download button, so one answer key fits both.
 npm run cli -- --preset "India PII" --rows 1000000 --seed 42 --out india.csv --answer-key india.key.json
 npm run cli -- --columns email,ssn --rows 100 --format ndjson
 npm run cli -- text --pack prompt --count 500 --seed 7 > prompts.ndjson
+npm run cli -- tables --schema hospital --people 1000 --seed 1 --out-dir ./hospital
 npm run cli -- list presets
 npm run cli -- --help
 ```

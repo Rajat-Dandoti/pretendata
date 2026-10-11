@@ -5,7 +5,7 @@ import { join } from 'node:path';
 export default async (page, check) => {
   await page.goto('/');
   await page.waitFor('document.querySelectorAll("tbody tr").length === 5');
-  await page.click('button[aria-label="Text and prompts"]');
+  await page.click('button[aria-label="More kinds of data"]');
   const zip = await page.download(() => page.click('button[aria-label="Download secrets fixture"]'));
   check(zip.name === 'pretendata-secrets-fixture.zip', `downloaded ${zip.name}`);
   const dir = join(page.out, 'fixture'); rmSync(dir, { recursive: true, force: true }); mkdirSync(dir);

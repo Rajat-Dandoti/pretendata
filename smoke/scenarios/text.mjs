@@ -4,7 +4,7 @@ const pick = async (page, current, option) => { await page.click('[role="dialog"
 export default async (page, check) => {
   await page.goto('/');
   await page.waitFor('document.querySelectorAll("tbody tr").length === 5');
-  await page.click('button[aria-label="Text and prompts"]');
+  await page.click('button[aria-label="More kinds of data"]');
   await page.waitFor('document.querySelectorAll(\'[data-role="docs"] > div\').length === 4');
   check(await page.eval(`document.querySelectorAll('[data-role="docs"] mark').length`) >= 4, 'preview highlights the embedded values');
 

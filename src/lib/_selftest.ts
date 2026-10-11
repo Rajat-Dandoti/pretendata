@@ -21,8 +21,9 @@ import { _selfCheck as text } from './text';
 import { _selfCheck as fixtures } from './fixtures';
 import { _selfCheck as maskcheck } from './maskcheck';
 import { _selfCheck as reident } from './reident';
+import { _selfCheck as relational, generateRelated, relatedToSQL } from './relational';
 
-for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify, text, fixtures, maskcheck, reident]) await f();
+for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify, text, fixtures, maskcheck, reident, relational]) await f();
 checkSeedContract();
 
 // SQL export, loaded into a real engine (Node's built-in SQLite): every value must come back
@@ -42,7 +43,20 @@ checkSeedContract();
   const o = { seed: 31, rows: 700, sparsity: 0, locale: 'en' as const, format: 'sql' as const };
   const streamed = back(sqlCreateTable(cols) + generateChunkText(cols, { ...o, chunk: 0 }) + generateChunkText(cols, { ...o, chunk: 1 }));
   if (streamed.length !== 1400) throw new Error('FAIL: streamed SQL chunks do not load as one table');
-  console.log('sql: dump loads back identically in SQLite');
+  // Related tables: the script loads with foreign keys enforced, and every child row joins to its person.
+  for (const schema of ['retail', 'hospital', 'bank'] as const) {
+    const r = generateRelated({ schema, people: 200, seed: 3 });
+    const db = new DatabaseSync(':memory:');
+    db.exec('PRAGMA foreign_keys = ON;');
+    db.exec(relatedToSQL(r));
+    const [people, ...children] = r.tables;
+    for (const t of children) {
+      const joined = (db.prepare(`SELECT COUNT(*) AS n FROM ${t.name} JOIN ${people.name} USING (${people.columns[0]})`).get() as { n: number }).n;
+      if (joined !== t.rows.length) throw new Error(`FAIL: ${schema}.${t.name} rows do not all join to ${people.name}`);
+    }
+    if ((db.prepare('PRAGMA foreign_key_check').all()).length) throw new Error(`FAIL: ${schema} has dangling foreign keys in SQLite`);
+  }
+  console.log('sql: dump loads back identically in SQLite; related tables load with foreign keys enforced');
 }
 
 // Command-line tool, run in process: for the same settings it must write what the app writes,
