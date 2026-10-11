@@ -102,9 +102,17 @@ export function generateGSTIN(): string {
 const IBAN_BBAN: Record<string, [letters: number, digits: number]> = {
   DE: [0, 18], FR: [0, 23], GB: [4, 14], ES: [0, 20], IT: [1, 22], NL: [4, 10],
 };
-/** mod-97 == 1 over the rearranged IBAN (BBAN + country + check digits). */
+// Registry BBAN layouts for the countries generated here (wider than the generator: the registry
+// allows letters where real banks use them). Other countries are held to the general shape only.
+const IBAN_REGISTRY: Record<string, RegExp> = {
+  DE: /^\d{18}$/, FR: /^\d{10}[A-Z0-9]{11}\d{2}$/, GB: /^[A-Z]{4}\d{14}$/,
+  ES: /^\d{20}$/, IT: /^[A-Z]\d{10}[A-Z0-9]{12}$/, NL: /^[A-Z]{4}\d{10}$/,
+};
+/** Shape, the country's registry layout where known, and mod-97 == 1 over the rearranged IBAN. */
 export function ibanValid(iban: string): boolean {
-  return mod97(lettersToDigits(iban.slice(4) + iban.slice(0, 4))) === 1;
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
+  const layout = IBAN_REGISTRY[iban.slice(0, 2)];
+  return (!layout || layout.test(iban.slice(4))) && mod97(lettersToDigits(iban.slice(4) + iban.slice(0, 4))) === 1;
 }
 export function generateIBAN(): string {
   const country = pick(Object.keys(IBAN_BBAN));
@@ -380,6 +388,46 @@ export function breakChecksum(s: string): string {
   return s.slice(0, i) + next;
 }
 
+// ---------- validators ----------
+// One per column whose values obey a checksum or a published rule, keyed by column id.
+// Each takes the value as the column writes it and says whether it is a valid instance.
+// They power the "paste a value" playground and the checks that every generated value is
+// valid and every near-miss is not. Written against the same definitions as the generators,
+// so `npm test` also checks them against known-good values from outside this codebase.
+const digitsOf = (s: string) => s.replace(/[\s-]/g, '');
+const luhnOk = (d: string) => /^\d+$/.test(d) && luhnCheckDigit(d.slice(0, -1)) === parseInt(d.slice(-1), 10);
+export const VALIDATORS: Record<string, (value: string) => boolean> = {
+  ssn: s => {
+    const m = /^(\d{3})-?(\d{2})-?(\d{4})$/.exec(s);
+    return !!m && m[1] !== '000' && m[1] !== '666' && m[1] < '900' && m[2] !== '00' && m[3] !== '0000';
+  },
+  aadhaar: s => { const d = digitsOf(s); return /^[2-9]\d{11}$/.test(d) && verhoeffCheckDigit(d.slice(0, 11)) === parseInt(d[11], 10); },
+  creditCard: s => { const d = digitsOf(s); return /^\d{13,19}$/.test(d) && luhnOk(d); },
+  iban: s => ibanValid(digitsOf(s).toUpperCase()),
+  npi: s => /^[12]\d{9}$/.test(s) && luhnOk('80840' + s),
+  nhsNumber: s => {
+    const d = digitsOf(s);
+    if (!/^\d{10}$/.test(d)) return false;
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += parseInt(d[i], 10) * (10 - i);
+    const check = (11 - (sum % 11)) % 11;
+    return check !== 10 && check === parseInt(d[9], 10);
+  },
+  gstin: s => /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(s) && gstinChecksum(s.slice(0, 14)) === s[14],
+  vin: vinValid,
+  imei: s => /^\d{15}$/.test(s) && luhnOk(s),
+  ean13: s => /^\d{13}$/.test(s) && [...s].reduce((sum, c, i) => sum + parseInt(c, 10) * (i % 2 === 0 ? 1 : 3), 0) % 10 === 0,
+  isin: s => /^[A-Z]{2}[A-Z0-9]{9}\d$/.test(s) && luhnOk(lettersToDigits(s)),
+  iqama: s => /^[12]\d{9}$/.test(s) && luhnOk(s),
+  dea: s => {
+    if (!/^[A-Z]{2}\d{7}$/.test(s)) return false;
+    const d = [...s.slice(2)].map(Number);
+    return (d[0] + d[2] + d[4] + 2 * (d[1] + d[3] + d[5])) % 10 === d[6];
+  },
+  // ABA routing number: weights 3, 7, 1 repeating, sum divisible by 10.
+  routingNumber: s => /^\d{9}$/.test(s) && [...s].reduce((sum, c, i) => sum + parseInt(c, 10) * [3, 7, 1][i % 3], 0) % 10 === 0,
+};
+
 // ---------- self-checks (ponytail: run via `tsx src/lib/validators.ts`) ----------
 function assert(cond: any, msg: string) { if (!cond) throw new Error('FAIL: ' + msg); }
 export function _selfCheck() {
@@ -487,6 +535,25 @@ export function _selfCheck() {
     assert(vinValid(v), `VIN checksum: ${v}`);
     const bad = breakChecksum(v);
     assert(/^[A-HJ-NPR-Z0-9]{17}$/.test(bad) && !vinValid(bad), `bad VIN still valid or mis-shaped: ${bad}`);
+  }
+  // Validators agree with values published outside this codebase (standard documentation examples).
+  const KNOWN_GOOD: Record<string, string[]> = {
+    creditCard: ['4111111111111111', '5555-5555-5555-4444', '378282246310005'],
+    iban: ['GB82WEST12345698765432', 'DE89370400440532013000', 'NL91ABNA0417164300', 'FR1420041010050500013M02606', 'ES9121000418450200051332', 'IT60X0542811101000000123456', 'BE68539007547034'],
+    vin: ['1M8GDM9AXKP042788'],
+    ean13: ['4006381333931'],
+    isin: ['US0378331005', 'GB0002634946'],
+    imei: ['490154203237518'],
+    nhsNumber: ['943 476 5919'],
+    routingNumber: ['021000021', '011000015'],
+    npi: ['1234567893'],
+    ssn: ['078-05-1120'],
+  };
+  for (const [id, values] of Object.entries(KNOWN_GOOD)) {
+    for (const v of values) assert(VALIDATORS[id](v), `validator ${id} rejects the known-good value ${v}`);
+  }
+  for (const [id, v] of Object.entries({ ssn: '666-12-3456', creditCard: '4111111111111112', iban: 'GB82WEST1234569876543', vin: '1M8GDM9A1KP042788', aadhaar: '123456789012', routingNumber: '021000022' })) {
+    assert(!VALIDATORS[id](v), `validator ${id} accepts the known-bad value ${v}`);
   }
   console.log('validators: all self-checks passed');
 }

@@ -2,10 +2,18 @@ import { useMemo, useState } from 'react';
 import { X, RefreshCw, Search, ChevronRight } from 'lucide-react';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, EXPECTATION_LABELS, expectationFor } from '../data/schema';
 import { describeValidation, sampleValues, patternFor } from '../lib/reference';
+import { identify, MatchStatus } from '../lib/identify';
 import { frameworksFor, valueTier, FrameworkId, FRAMEWORKS } from '../lib/frameworks';
 import { Chip, T, TIER_CHIP } from '../lib/ui';
 import { LocaleId } from '../lib/locale';
 import { cn } from '../lib/utils';
+
+const MATCH_LABEL: Record<MatchStatus, string> = { valid: 'Valid', invalid: 'Fails check', shape: 'Shape only' };
+const MATCH_CHIP: Record<MatchStatus, string> = {
+  valid: 'bg-green-100 text-green-800 border-green-200',
+  invalid: 'bg-red-100 text-red-800 border-red-200',
+  shape: 'bg-slate-100 text-slate-600 border-slate-200',
+};
 
 // Slide-out reference for every column: a live example + its pattern/algorithm, region,
 // category and framework tags. All derived from the schema — single source of truth.
@@ -13,6 +21,8 @@ export default function ColumnReference({ onClose, locale }: { onClose: () => vo
   const [query, setQuery] = useState('');
   const [nonce, setNonce] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [probe, setProbe] = useState('');
+  const matches = useMemo(() => identify(probe), [probe]);
   const samples = useMemo(() => sampleValues(locale), [locale, nonce]);
   const toggle = (cat: string) => setCollapsed(prev => {
     const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n;
@@ -48,6 +58,24 @@ export default function ColumnReference({ onClose, locale }: { onClose: () => vo
             <RefreshCw size={15} />
           </button>
           <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700"><X size={18} /></button>
+        </div>
+
+        <div className="px-4 py-3 border-b border-slate-200 shrink-0 space-y-2 bg-slate-50">
+          <label className={cn(T.meta, 'block')} htmlFor="identify-value">Paste a value to see which identifiers it fits, and whether it passes their checks</label>
+          <input id="identify-value" value={probe} onChange={e => setProbe(e.target.value)} placeholder="e.g. 4111 1111 1111 1111" spellCheck={false} autoComplete="off"
+            className="w-full px-2 py-1.5 text-xs font-mono bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+          {probe.trim() !== '' && (
+            <ul data-role="matches" className="space-y-1">
+              {matches.length === 0 && <li className={cn(T.meta, 'italic')}>Fits no identifier's shape.</li>}
+              {matches.map(m => (
+                <li key={m.id} data-status={m.status} className="flex items-center gap-2 text-xs">
+                  <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded border shrink-0', MATCH_CHIP[m.status])}>{MATCH_LABEL[m.status]}</span>
+                  <span className="text-slate-700 truncate">{m.name}</span>
+                  <span className={cn(T.meta, 'ml-auto shrink-0')}>{m.check}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="px-4 py-3 border-b border-slate-200 shrink-0">

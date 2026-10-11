@@ -2,7 +2,7 @@
 // downloads from their answer keys. usage: npm run smoke
 import { spawnSync } from 'node:child_process';
 
-const steps = [['baseline'], ['stream'], ['hygiene'], ['answerkey', 'answerkey.verify.mts'], ['scorecard'], ['knobs', 'knobs.verify.mts']];
+const steps = [['baseline'], ['stream'], ['hygiene'], ['answerkey', 'answerkey.verify.mts'], ['scorecard'], ['knobs', 'knobs.verify.mts'], ['identify']];
 const failed = [];
 for (const [scenario, verify] of steps) {
   console.log(`\n== ${scenario}`);

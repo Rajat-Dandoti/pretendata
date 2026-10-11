@@ -14,8 +14,9 @@ import { _selfCheck as reference } from './reference';
 import { _selfCheck as nesting } from './nesting';
 import { _selfCheck as streaming } from './streaming';
 import { _selfCheck as scorecard } from './scorecard';
+import { _selfCheck as identify } from './identify';
 
-for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard]) await f();
+for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify]) await f();
 // Seed contract: the same seed and settings must keep producing the same bytes. This hashes
 // seeded output for every column and locale, on both generation paths.
 // If it fails and the change in output is intended: bump GENERATOR_VERSION in generate.ts,
