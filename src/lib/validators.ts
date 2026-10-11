@@ -74,7 +74,8 @@ export function generateAadhaar(): string {
 // PAN: AAAAA9999A — 4th char is entity type, 5th is surname initial
 const PAN_ENTITY = ['P','C','H','F','A','T','B','L','J','G'];
 export function generatePAN(): string {
-  return alphaUpper(3) + pick(PAN_ENTITY) + alphaUpper(1) + digits(4) + alphaUpper(1);
+  // The serial runs 0001–9999; 0000 is never issued.
+  return alphaUpper(3) + pick(PAN_ENTITY) + alphaUpper(1) + String(1 + rand(9999)).padStart(4, '0') + alphaUpper(1);
 }
 
 // GSTIN: SS + PAN(10) + entity(1) + Z + check(1), mod-36
@@ -95,33 +96,58 @@ export function generateGSTIN(): string {
   return base + gstinChecksum(base);
 }
 
-// IBAN: country + 2 check digits (mod-97) + BBAN in the country's registry layout
-// ([letters, digits] — GB/NL lead with a 4-letter bank code, IT with its CIN letter).
-// ponytail: national check digits inside the BBAN (FR RIB key, ES DC, IT CIN) are random —
-// compute them if a detector validates past length + layout + mod-97.
-const IBAN_BBAN: Record<string, [letters: number, digits: number]> = {
-  DE: [0, 18], FR: [0, 23], GB: [4, 14], ES: [0, 20], IT: [1, 22], NL: [4, 10],
+// IBAN: country + 2 check digits (mod-97) + BBAN in the country's registry layout. Spain, France
+// and Italy also carry national check digits inside the BBAN, which validators that know the
+// country check as well (python-stdnum rejected every Spanish IBAN while these were random).
+// ES: bank(4) branch(4) DC(2) account(10) — DC1 covers "00"+bank+branch, DC2 the account.
+const ES_WEIGHTS = [1, 2, 4, 8, 5, 10, 9, 7, 3, 6];
+const esCheck = (ten: string) => { const r = 11 - ([...ten].reduce((s, c, i) => s + Number(c) * ES_WEIGHTS[i], 0) % 11); return r === 11 ? 0 : r === 10 ? 1 : r; };
+const esChecks = (bank: string, branch: string, account: string) => `${esCheck('00' + bank + branch)}${esCheck(account)}`;
+// FR: bank(5) branch(5) account(11) key(2) — the RIB key is 97 − ((89·bank + 15·branch + 3·account) mod 97).
+// A letter in the account counts as a digit: A,J=1  B,K,S=2  C,L,T=3 … I,R,Z=9.
+const frDigits = (s: string) => s.replace(/[A-Z]/g, ch => { const i = ch.charCodeAt(0) - 65; return String(i < 9 ? i + 1 : i < 18 ? i - 8 : i - 16); });
+const frKey = (bank: string, branch: string, account: string) =>
+  String(97 - Number((89n * BigInt(bank) + 15n * BigInt(branch) + 3n * BigInt(frDigits(account))) % 97n)).padStart(2, '0');
+// IT: CIN(1 letter) ABI(5) CAB(5) account(12) — odd positions go through a fixed table, even ones count as is.
+const IT_ODD = [1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16, 10, 22, 25, 24, 23];
+const itCin = (rest: string) => String.fromCharCode(65 + [...rest].reduce((sum, ch, i) => {
+  const v = ch >= 'A' ? ch.charCodeAt(0) - 65 : Number(ch);
+  return sum + (i % 2 === 0 ? IT_ODD[v] : v);
+}, 0) % 26);
+
+const IBAN_BBAN: Record<string, () => string> = {
+  DE: () => digits(18),
+  GB: () => alphaUpper(4) + digits(14),
+  NL: () => alphaUpper(4) + digits(10),
+  ES: () => { const bank = digits(4), branch = digits(4), account = digits(10); return bank + branch + esChecks(bank, branch, account) + account; },
+  FR: () => { const bank = digits(5), branch = digits(5), account = digits(11); return bank + branch + account + frKey(bank, branch, account); },
+  IT: () => { const rest = digits(22); return itCin(rest) + rest; },
 };
 // Registry BBAN layouts for the countries generated here (wider than the generator: the registry
-// allows letters where real banks use them). Other countries are held to the general shape only.
-const IBAN_REGISTRY: Record<string, RegExp> = {
-  DE: /^\d{18}$/, FR: /^\d{10}[A-Z0-9]{11}\d{2}$/, GB: /^[A-Z]{4}\d{14}$/,
-  ES: /^\d{20}$/, IT: /^[A-Z]\d{10}[A-Z0-9]{12}$/, NL: /^[A-Z]{4}\d{10}$/,
+// allows letters where real banks use them), with the national check where there is one.
+// Other countries are held to the general shape only.
+const IBAN_REGISTRY: Record<string, { layout: RegExp; national?: (bban: string) => boolean }> = {
+  DE: { layout: /^\d{18}$/ },
+  GB: { layout: /^[A-Z]{4}\d{14}$/ },
+  NL: { layout: /^[A-Z]{4}\d{10}$/ },
+  ES: { layout: /^\d{20}$/, national: b => esChecks(b.slice(0, 4), b.slice(4, 8), b.slice(10)) === b.slice(8, 10) },
+  FR: { layout: /^\d{10}[A-Z0-9]{11}\d{2}$/, national: b => frKey(b.slice(0, 5), b.slice(5, 10), b.slice(10, 21)) === b.slice(21) },
+  IT: { layout: /^[A-Z]\d{10}[A-Z0-9]{12}$/, national: b => itCin(b.slice(1)) === b[0] },
 };
 // Country codes in the IBAN registry: without this, any 17-character VIN that starts with two
 // letters and two digits has a 1-in-97 chance of "being" an IBAN.
 const IBAN_COUNTRIES = new Set(('AD AE AL AT AZ BA BE BG BH BI BR BY CH CR CY CZ DE DJ DK DO EE EG ES FI FK FO FR GB GE GI GL GR GT HN HR HU ' +
   'IE IL IQ IS IT JO KW KZ LB LC LI LT LU LV LY MC MD ME MK MN MR MT MU NI NL NO OM PK PL PS PT QA RO RS RU SA SC SD SE SI SK SM SO ST SV TL TN TR UA VA VG XK YE').split(' '));
-/** A registry country, its layout where known, and mod-97 == 1 over the rearranged IBAN. */
+/** A registry country, its layout and national check where known, and mod-97 == 1 over the rearranged IBAN. */
 export function ibanValid(iban: string): boolean {
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban) || !IBAN_COUNTRIES.has(iban.slice(0, 2))) return false;
-  const layout = IBAN_REGISTRY[iban.slice(0, 2)];
-  return (!layout || layout.test(iban.slice(4))) && mod97(lettersToDigits(iban.slice(4) + iban.slice(0, 4))) === 1;
+  const known = IBAN_REGISTRY[iban.slice(0, 2)], bban = iban.slice(4);
+  if (known && (!known.layout.test(bban) || (known.national && !known.national(bban)))) return false;
+  return mod97(lettersToDigits(bban + iban.slice(0, 4))) === 1;
 }
 export function generateIBAN(): string {
   const country = pick(Object.keys(IBAN_BBAN));
-  const [letters, numbers] = IBAN_BBAN[country];
-  const bban = alphaUpper(letters) + digits(numbers);
+  const bban = IBAN_BBAN[country]();
   const check = 98 - mod97(lettersToDigits(bban + country + '00'));
   return country + String(check).padStart(2, '0') + bban;
 }
@@ -241,8 +267,8 @@ export function generateUPI(): string {
   const local = rand(2) === 0 ? pick([6, 7, 8, 9]) + digits(9) : faker.internet.username().toLowerCase().replace(/[^a-z0-9.]/g, '');
   return `${local}@${pick(UPI_HANDLES)}`;
 }
-// Voter ID (EPIC): 3 letters + 7 digits.
-export function generateVoterId(): string { return alphaUpper(3) + digits(7); }
+// Voter ID (EPIC): 3 letters + 7 digits, the last of them a Luhn check digit over the other six.
+export function generateVoterId(): string { const d = digits(6); return alphaUpper(3) + d + luhnCheckDigit(d); }
 // Vehicle registration: SS + RTO(2 digits) + series(1-2 letters) + 4 digits, e.g. MH12AB1234.
 export function generateVehicleRegIndia(): string {
   return pick(INDIA_STATES) + String(rand(99)).padStart(2, '0') + alphaUpper(1 + rand(2)) + digits(4);
@@ -373,7 +399,10 @@ export function generateTFN(): string {
 }
 
 // China Resident Identity Card: 6-digit region, birth date, 3-digit order (odd = male), ISO 7064 MOD 11-2 check.
-const CN_REGIONS = ['110105', '310101', '440106', '440305', '510104', '330106', '320102', '420106', '610113', '500103'];
+// Districts of Beijing, Shanghai and Tianjin whose codes have not changed since the 1940s. A region code must
+// have existed when the holder was born, and most codes are younger than that: with a wider list,
+// python-stdnum rejected half of the generated numbers.
+const CN_REGIONS = ['110101', '110102', '110105', '110108', '310101', '310104', '310105', '120101', '120102'];
 const CN_W = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
 const cnCheck = (d17: string) => '10X98765432'[[...d17].reduce((s, c, i) => s + Number(c) * CN_W[i], 0) % 11];
 export function generateChinaId(dob = someDob(), sex = someSex()): string {
@@ -532,6 +561,8 @@ export const VALIDATORS: Record<string, (value: string) => boolean> = {
     const m = /^(\d{3})-?(\d{2})-?(\d{4})$/.exec(s);
     return !!m && m[1] !== '000' && m[1] !== '666' && m[1] < '900' && m[2] !== '00' && m[3] !== '0000';
   },
+  pan: s => new RegExp(`^[A-Z]{3}[${PAN_ENTITY.join('')}][A-Z]\\d{4}[A-Z]$`).test(s) && s.slice(5, 9) !== '0000',
+  voterId: s => /^[A-Z]{3}\d{7}$/.test(s) && luhnOk(s.slice(3)),
   aadhaar: s => { const d = digitsOf(s); return /^[2-9]\d{11}$/.test(d) && verhoeffCheckDigit(d.slice(0, 11)) === parseInt(d[11], 10); },
   creditCard: s => { const d = digitsOf(s); return /^\d{13,19}$/.test(d) && luhnOk(d); },
   iban: s => ibanValid(digitsOf(s).toUpperCase()),
@@ -638,6 +669,12 @@ export function _selfCheck() {
     assert(!ibanValid(breakChecksum(ib)), `bad IBAN still valid: ${ib}`);
   }
   assert(ibanValid('GB82WEST12345698765432') && ibanValid('NL91ABNA0417164300'), 'known-good IBANs');
+  // national check digits: published examples pass; the same IBAN with only its inner digits changed (and the
+  // outer mod-97 digits recomputed, so that check still passes) does not
+  const reouter = (country: string, bban: string) => country + String(98 - mod97(lettersToDigits(bban + country + '00'))).padStart(2, '0') + bban;
+  assert(ibanValid('ES9121000418450200051332') && ibanValid('FR7630006000011234567890189') && ibanValid('IT60X0542811101000000123456'), 'ES/FR/IT examples');
+  assert(ibanValid(reouter('ES', '21000418450200051332')) && !ibanValid(reouter('ES', '21000418460200051332')), 'ES inner check digits');
+  assert(!ibanValid(reouter('FR', '30006000011234567890188')) && !ibanValid(reouter('IT', 'A0542811101000000123456')), 'FR key and IT CIN');
   // JWT — header and payload are base64url JSON
   const [jh, jp, js] = generateJWT().split('.');
   const unb64 = (x: string) => JSON.parse(atob(x.replace(/-/g, '+').replace(/_/g, '/')));
@@ -731,6 +768,8 @@ export function _selfCheck() {
     routingNumber: ['021000021', '011000015'],
     npi: ['1234567893'],
     ssn: ['078-05-1120'],
+    pan: ['ACUPA7085R'],
+    voterId: ['WKH1186253'],
     canadaSin: ['046 454 286'],
     brazilCpf: ['529.982.247-25'],
     brazilCnpj: ['11.222.333/0001-81'],
@@ -749,7 +788,7 @@ export function _selfCheck() {
   for (const [id, values] of Object.entries(KNOWN_GOOD)) {
     for (const v of values) assert(VALIDATORS[id](v), `validator ${id} rejects the known-good value ${v}`);
   }
-  for (const [id, v] of Object.entries({ ssn: '666-12-3456', creditCard: '4111111111111112', iban: 'GB82WEST1234569876543', vin: '1M8GDM9A1KP042788', aadhaar: '123456789012', routingNumber: '021000022',
+  for (const [id, v] of Object.entries({ ssn: '666-12-3456', creditCard: '4111111111111112', iban: 'GB82WEST1234569876543', pan: 'ACUPA0000R', voterId: 'WKH1186263', vin: '1M8GDM9A1KP042788', aadhaar: '123456789012', routingNumber: '021000022',
     ukNino: 'QQ123456A', usItin: '900-69-0000', spainDni: '12345678A', netherlandsBsn: '111222334', brazilCpf: '111.111.111-11', singaporeNric: 'S1234567A', chinaResidentId: '110105194912310021' })) {
     assert(!VALIDATORS[id](v), `validator ${id} accepts the known-bad value ${v}`);
   }

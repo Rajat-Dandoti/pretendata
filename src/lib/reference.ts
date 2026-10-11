@@ -7,7 +7,7 @@ import { LocaleId } from './locale';
 const GLOSSARY: Record<string, { label: string; note: string }> = {
   'free-form':    { label: 'Free-form',    note: 'No shape contract — names, notes, job titles.' },
   'pattern-only': { label: 'Pattern only', note: 'Regex-shaped, no checksum.' },
-  'luhn':         { label: 'Luhn',         note: 'Luhn mod-10 check digit (cards, IMEI, Iqama, SIN, South Africa ID, Emirates ID).' },
+  'luhn':         { label: 'Luhn',         note: 'Luhn mod-10 check digit (cards, IMEI, Iqama, SIN, South Africa ID, Emirates ID, India voter ID).' },
   'verhoeff':     { label: 'Verhoeff',     note: 'Verhoeff mod-10 check digit (Aadhaar).' },
   'mod-97':       { label: 'Mod-97',       note: 'Mod-97 check (IBAN, France NIR).' },
   'mod-36':       { label: 'Mod-36',       note: 'Mod-36 weighted check (GSTIN).' },

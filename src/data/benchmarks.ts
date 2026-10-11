@@ -5,11 +5,15 @@
 // `sha256` pins the CSV it produces. It is tied to one generator version: when GENERATOR_VERSION
 // changes, this set can no longer be reproduced and `npm test` says so. Publish a new
 // BENCHMARK_VERSION then; never edit a published one.
+//
+// Version 1 (generator version 4) was published on 2026-10-11 and retired the same day, before anyone
+// had used it: a cross-check against python-stdnum found four identifiers that were not valid (Indian
+// voter ID, Spanish IBAN, Chinese resident ID, and one PAN in ten thousand). Version 2 has them fixed.
 import type { LocaleId } from '../lib/locale';
 
-export const BENCHMARK_VERSION = 1;
+export const BENCHMARK_VERSION = 2;
 /** GENERATOR_VERSION these benchmarks were pinned at. */
-export const BENCHMARK_GENERATOR: number = 4;
+export const BENCHMARK_GENERATOR: number = 5;
 
 export interface Benchmark {
   id: string;
@@ -30,31 +34,38 @@ export const BENCHMARKS: Benchmark[] = [
     description: 'Indian identifiers, their near-misses and hard negatives, with Indian names and phone numbers.',
     columnIds: [
       'firstName', 'lastName', 'email', 'phone', 'aadhaar', 'pan', 'upiId', 'voterId', 'dlIndia', 'abha', 'accountNumber', 'ifsc',
-      'dob', 'gender', 'city', 'gstin', 'vehicleRegIndia', 'aadhaar_invalid', 'gstin_invalid', 'aadhaar_prefix', 'epochSeconds', 'orderNumber',
+      'dob', 'gender', 'city', 'gstin', 'vehicleRegIndia', 'aadhaar_invalid', 'gstin_invalid', 'voterId_invalid', 'aadhaar_prefix', 'epochSeconds', 'orderNumber',
     ],
     rowCount: 10_000,
     seed: 1001,
     locale: 'en_IN',
-    sha256: 'c20afeef3ef9bbd89341195dbadfc4716bc847fb45e2c97f6b1375b975cd5070',
+    sha256: '7496f2278dafee0694282f40e146c25f509b6ba9ae8698e773cbb8f4949e5dd6',
   },
   {
     id: 'global',
     name: 'Global',
-    description: 'The whole catalog as of benchmark version 1: every should-fire column, every negative control, every context column.',
+    description: 'The whole catalog as of benchmark version 2: every should-fire column, every negative control, every context column.',
     columnIds: [
     'firstName', 'lastName', 'email', 'phone', 'ssn', 'aadhaar', 'pan', 'ein', 'upiId', 'voterId', 'iqama',
-    'dlIndia', 'dlUS', 'dlUK', 'dlGermany', 'passportNumber', 'driversLicense', 'ipAddress', 'macAddress', 'mrn',
-    'healthInsuranceId', 'bloodType', 'diagnosisCode', 'medicalNotes', 'npi', 'dea', 'nhsNumber', 'abha',
-    'creditCard', 'cvv', 'routingNumber', 'accountNumber', 'iban', 'ifsc', 'zipCode', 'dob', 'gender', 'ethnicity',
-    'city', 'jobTitle', 'department', 'major', 'university', 'gstin', 'vin', 'imei', 'vehicleRegIndia', 'salary',
-    'age', 'purchaseCount', 'accountBalance', 'creditScore', 'gpa', 'performanceScore', 'loanAmount', 'maskedEmail',
-    'hashedId', 'last4SSN', 'tokenizedCard', 'maskedAccount', 'transactionId', 'createdAt', 'deviceType',
-    'storeLocation', 'hireDate', 'graduationYear', 'lastLogin', 'subscriptionTier', 'employeeId', 'studentId',
-    'crmId', 'ean13', 'isin', 'awsAccessKey', 'awsSecretKey', 'githubPAT', 'stripeKey', 'googleApiKey', 'jwt',
-    'bcryptHash', 'privateKeyPem', 'basicAuthUrl', 'fingerprintHash', 'faceEmbeddingId', 'voiceprintId',
-    'irisScanId', 'ipv6Address', 'userAgent', 'sessionCookie', 'internalHostname', 'cidrBlock', 'geoCoordinates',
-    'aadhaar_invalid', 'creditCard_invalid', 'iban_invalid', 'npi_invalid', 'nhsNumber_invalid', 'gstin_invalid',
-    'vin_invalid', 'imei_invalid', 'ean13_invalid', 'isin_invalid', 'iqama_invalid', 'ssn_invalid', 'aadhaar_prefix',
+    'dlIndia', 'dlUS', 'dlUK', 'dlGermany', 'passportNumber', 'driversLicense', 'ipAddress', 'macAddress', 'usItin',
+    'canadaSin', 'brazilCpf', 'brazilCnpj', 'ukNino', 'spainDni', 'spainNie', 'netherlandsBsn', 'franceNir',
+    'singaporeNric', 'australiaTfn', 'chinaResidentId', 'southAfricaId', 'uaeEmiratesId', 'indiaPassport', 'uan',
+    'mrn', 'healthInsuranceId', 'bloodType', 'diagnosisCode', 'medicalNotes', 'npi', 'dea', 'nhsNumber', 'abha',
+    'medication', 'labResult', 'creditCard', 'cvv', 'routingNumber', 'accountNumber', 'iban', 'ifsc', 'cardExpiry',
+    'zipCode', 'dob', 'gender', 'ethnicity', 'religion', 'politicalOpinion', 'unionMembership', 'city', 'jobTitle',
+    'department', 'major', 'university', 'gstin', 'vin', 'imei', 'vehicleRegIndia', 'salary', 'age', 'purchaseCount',
+    'accountBalance', 'creditScore', 'gpa', 'performanceScore', 'loanAmount', 'maskedEmail', 'hashedId', 'last4SSN',
+    'tokenizedCard', 'maskedAccount', 'maskedAadhaar', 'transactionId', 'createdAt', 'deviceType', 'storeLocation',
+    'hireDate', 'graduationYear', 'lastLogin', 'subscriptionTier', 'employeeId', 'studentId', 'crmId', 'ean13',
+    'isin', 'swiftBic', 'awsAccessKey', 'awsSecretKey', 'githubPAT', 'stripeKey', 'googleApiKey', 'jwt',
+    'bcryptHash', 'privateKeyPem', 'basicAuthUrl', 'slackBotToken', 'openaiKey', 'anthropicKey', 'npmToken',
+    'sendgridKey', 'twilioKey', 'azureStorageKey', 'dbConnectionString', 'sshPrivateKey', 'gcpServiceAccount',
+    'fingerprintHash', 'faceEmbeddingId', 'voiceprintId', 'irisScanId', 'ipv6Address', 'userAgent', 'sessionCookie',
+    'internalHostname', 'cidrBlock', 'geoCoordinates', 'aadhaar_invalid', 'creditCard_invalid', 'iban_invalid',
+    'npi_invalid', 'nhsNumber_invalid', 'gstin_invalid', 'vin_invalid', 'imei_invalid', 'ean13_invalid',
+    'isin_invalid', 'iqama_invalid', 'voterId_invalid', 'canadaSin_invalid', 'brazilCpf_invalid', 'spainDni_invalid',
+    'netherlandsBsn_invalid', 'franceNir_invalid', 'singaporeNric_invalid', 'australiaTfn_invalid',
+    'chinaResidentId_invalid', 'southAfricaId_invalid', 'uaeEmiratesId_invalid', 'ssn_invalid', 'aadhaar_prefix',
     'creditCard_transposed', 'routingNumber_invalid', 'dea_invalid', 'epochSeconds', 'epochMillis', 'orderNumber',
     'trackingNumber', 'skuCode', 'chaosEmpty', 'chaosUnicode', 'chaosSqli', 'chaosXss', 'chaosHomoglyph',
     'chaosLong', 'chaosCsvBreak', 'chaosNumeric',
@@ -62,7 +73,7 @@ export const BENCHMARKS: Benchmark[] = [
     rowCount: 10_000,
     seed: 1002,
     locale: 'mix',
-    sha256: 'b6837ce1558b2efbb1ab376d7cabacd058799c33f7ab1bfbb42a918699065fcf',
+    sha256: 'ae542f9a2689f7c8deb34e633aff1bb4096a11d161204fdfe1449640a4f3025a',
   },
   {
     id: 'secrets',
@@ -75,7 +86,7 @@ export const BENCHMARKS: Benchmark[] = [
     rowCount: 10_000,
     seed: 1003,
     locale: 'en',
-    sha256: 'f37febf5c0873164803220cb8b1403f9618434f655590ecbc35f5a4912645042',
+    sha256: '0acd162850b82d45da3a961c1c967b0297a9068c89cdd6d1410d55f7b3270db1',
   },
 ];
 

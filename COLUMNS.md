@@ -3,7 +3,8 @@
 The generator is **schema-driven**: [`src/data/schema.ts`](src/data/schema.ts) is the single
 source of truth. Every column declares a `category`, a `generate()` function, and (via
 `COLUMN_DLP_META`) an optional `region` and `validation` contract. Checksum logic lives in
-[`src/lib/validators.ts`](src/lib/validators.ts) and is exercised by `npm test`.
+[`src/lib/validators.ts`](src/lib/validators.ts) and is exercised by `npm test`. [VALIDATION.md](VALIDATION.md)
+records how independent libraries judge the same values (`npm run crosscheck`).
 
 This document mirrors that schema. If code and doc disagree, **the code wins** — update this file.
 
@@ -84,10 +85,10 @@ Emitted into the **answer key** so a test harness knows what guarantee each valu
 | Phone (mobile) | `phone` | locale | pattern-only | Real mobile prefixes per locale, random local format. IN: 10 digits starting 6–9 as `+91 98765 43210` / `+91…` / `91…` / `098765 43210` / bare. US: NANPA `(NXX) NXX-XXXX`. DE 015x/016x/017x · ES 6xx/7xx · FR 06/07 · JP 070/080/090 |
 | SSN | `ssn` | US | pattern-only | `AAA-GG-SSSS`; area ≠ 000/666/900-999, group ≠ 00, serial ≠ 0000 |
 | Aadhaar | `aadhaar` | IN | **verhoeff** | 12 digits, first 2–9, Verhoeff check digit |
-| PAN | `pan` | IN | pattern-only | `AAAAA9999A`; 4th char = entity type, 5th = surname initial |
+| PAN | `pan` | IN | pattern-only | `AAAAA9999A`; 4th char = entity type, 5th = surname initial; serial `0001`–`9999` (`0000` is never issued) |
 | EIN | `ein` | US | pattern-only | `NN-NNNNNNN`; prefix from valid IRS campus list |
 | UPI ID | `upiId` | IN | pattern-only | `local@handle`; local = 10-digit mobile or a username, handle from real PSP list (`ybl`, `oksbi`, `paytm`, …) |
-| Voter ID (EPIC) | `voterId` | IN | pattern-only | 3 letters + 7 digits |
+| Voter ID (EPIC) | `voterId` | IN | **luhn** | 3 letters + 7 digits, the last a Luhn check digit over the other six |
 | Iqama | `iqama` | SA | **luhn** | 10 digits, prefix `2` (resident), Luhn check digit |
 | Driver's Licence (IN) | `dlIndia` | IN | pattern-only | `SS## YYYYNNNNNNN` (state + RTO + year + serial) |
 | Driver's Licence (US) | `dlUS` | US | pattern-only | `A#######` (CA format) |
@@ -117,7 +118,7 @@ and Gender columns.
 | NIR | `franceNir` | FR | **mod-97** | Sex, birth year and month, department, commune, order, then key = 97 − (number mod 97). Corsica (2A/2B) not generated |
 | NRIC | `singaporeNric` | SG | **mod-11** | `S` (born before 2000) or `T` + 7 digits + check letter from weights 2,7,6,5,4,3,2 |
 | TFN | `australiaTfn` | AU | **mod-11** | 9 digits; weighted sum (1,4,3,7,5,8,6,9,10) divisible by 11 |
-| Resident ID | `chinaResidentId` | CN | **mod-11** | 6-digit region, birth date, 3-digit order (odd = male), ISO 7064 MOD 11-2 check (may be `X`) |
+| Resident ID | `chinaResidentId` | CN | **mod-11** | 6-digit region (Beijing, Shanghai and Tianjin districts whose codes are old enough for any birth year), birth date, 3-digit order (odd = male), ISO 7064 MOD 11-2 check (may be `X`) |
 | ID Number | `southAfricaId` | ZA | **luhn** | Birth date `YYMMDD`, 4-digit sequence (5000+ = male), citizenship digit, `8`, Luhn check |
 | Emirates ID | `uaeEmiratesId` | AE | **luhn** | `784-YYYY-NNNNNNN-C`; Luhn over all fifteen digits |
 | Passport | `indiaPassport` | IN | pattern-only | One letter + 7 digits |
@@ -147,7 +148,7 @@ and Gender columns.
 | CVV | `cvv` | — | pattern-only | Faker 3-digit |
 | Routing Number | `routingNumber` | US | pattern-only | Faker ABA |
 | Account Number | `accountNumber` | — | pattern-only | Faker 10-digit |
-| IBAN | `iban` | INTL | **mod-97** | Country + 2 check digits + BBAN; `98 − mod97(bban+country+00)`. Registry length and layout per country: DE 22, FR 27, ES 24 (digits); GB 22 and NL 18 (4-letter bank code + digits); IT 27 (CIN letter + digits). National check digits inside the BBAN are not computed |
+| IBAN | `iban` | INTL | **mod-97** | Country + 2 check digits + BBAN; `98 − mod97(bban+country+00)`. Registry length and layout per country: DE 22, FR 27, ES 24 (digits); GB 22 and NL 18 (4-letter bank code + digits); IT 27 (CIN letter + digits). The national check digits inside the BBAN are computed too: Spain's two control digits, France's RIB key, Italy's CIN |
 | IFSC Code | `ifsc` | IN | pattern-only | A real bank code (`SBIN`, `HDFC`, `ICIC` …) + `0` + 6 digits |
 | Card Expiry | `cardExpiry` | — | pattern-only | `MM/YY`, within five years of the reference date |
 
@@ -292,6 +293,7 @@ card, in the same dashed/plain shapes) — bumping a random number would leave ~
 | Iqama (near-miss) | `iqama_invalid` | `iqama` |
 | Routing Number (near-miss) | `routingNumber_invalid` | `routingNumber` |
 | DEA Number (near-miss) | `dea_invalid` | `dea` |
+| Voter ID (near-miss) | `voterId_invalid` | `voterId` |
 | SIN (near-miss) | `canadaSin_invalid` | `canadaSin` |
 | CPF (near-miss) | `brazilCpf_invalid` | `brazilCpf` |
 | DNI (near-miss) | `spainDni_invalid` | `spainDni` |
@@ -445,7 +447,8 @@ National IDs (World): one national identifier from each of thirteen countries.
 
 1. Add one `ColumnDef` to `AVAILABLE_COLUMNS` in `schema.ts` (`id`, `name`, `category`, `generate`, `defaultSelected`).
 2. If it's region-specific or checksum-bearing, add a `COLUMN_DLP_META[id]` entry (`region`, `validation`).
-3. New checksum? Add the generator to `validators.ts` and its validity function to `VALIDATORS`, with a
+3. New checksum? If python-stdnum has a module for it, add the column to `scripts/crosscheck/` and run
+   `npm run crosscheck`: an outside library must accept every generated value. Add the generator to `validators.ts` and its validity function to `VALIDATORS`, with a
    known-good value from an official source in `KNOWN_GOOD`. A near-miss or other negative control goes
    through `negative()` so it is valid as nothing.
 4. New category? Add it to the `PrivacyCategory` union, `CATEGORY_COLORS` **and**

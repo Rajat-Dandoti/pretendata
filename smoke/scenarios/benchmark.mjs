@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-const PINNED = { india: 'c20afeef3ef9bbd89341195dbadfc4716bc847fb45e2c97f6b1375b975cd5070' };
+const PINNED = { india: '7496f2278dafee0694282f40e146c25f509b6ba9ae8698e773cbb8f4949e5dd6' };
 export default async (page, check) => {
   await page.goto('/');
   await page.waitFor('document.querySelectorAll("tbody tr").length === 5');
@@ -13,7 +13,7 @@ export default async (page, check) => {
   await page.click('button[aria-label="Use the India benchmark"]');
   await page.waitFor('!document.querySelector(\'[role="dialog"]\')');
   const st = await page.eval(`({ rows: document.querySelector('input[type="number"]').value, seed: document.querySelector('input[inputmode="numeric"]').value, cols: document.querySelectorAll('thead th').length - 1, csv: document.querySelector('[data-format="csv"]').getAttribute('aria-checked') })`);
-  check(st.rows === '10000' && st.seed === '1001' && st.cols === 22 && st.csv === 'true', `benchmark settings applied (${JSON.stringify(st)})`);
+  check(st.rows === '10000' && st.seed === '1001' && st.cols === 23 && st.csv === 'true', `benchmark settings applied (${JSON.stringify(st)})`);
 
   const file = await page.download(() => page.click('button[aria-label="Download"]'), 60000);
   const sha = createHash('sha256').update(readFileSync(file.path)).digest('hex');
@@ -28,6 +28,6 @@ export default async (page, check) => {
   await page.upload('input[data-role="key"]', key.path);
   await page.upload('input[data-role="results"]', results);
   await page.waitFor('document.querySelector(\'[data-role="benchmark"]\')');
-  check((await page.eval(`document.querySelector('[data-role="benchmark"]').textContent`)) === 'Benchmark v1 · India', 'the scorecard recognises the benchmark from its answer key');
-  check((await page.eval(`document.querySelector('[data-stat="ignore"]').textContent`)).includes('5 false positives'), 'a tool that flags everything gets all five controls wrong');
+  check((await page.eval(`document.querySelector('[data-role="benchmark"]').textContent`)) === 'Benchmark v2 · India', 'the scorecard recognises the benchmark from its answer key');
+  check((await page.eval(`document.querySelector('[data-stat="ignore"]').textContent`)).includes('6 false positives'), 'a tool that flags everything gets all six controls wrong');
 };

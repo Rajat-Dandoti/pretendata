@@ -44,7 +44,8 @@ const base = (process.env.SMOKE_BASE ?? `http://127.0.0.1:${server.address().por
 mkdirSync(OUT, { recursive: true });
 const profile = join(OUT, 'profile'); rmSync(profile, { recursive: true, force: true });
 const downloads = join(OUT, 'downloads'); rmSync(downloads, { recursive: true, force: true }); mkdirSync(downloads, { recursive: true });
-const chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--disable-gpu', '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
+// Hosted CI runners do not allow Chrome's sandbox.
+const chrome = spawn(CHROME, [...(process.env.CI ? ['--no-sandbox'] : []), '--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--disable-gpu', '--window-size=1440,900', 'about:blank'], { stdio: 'ignore' });
 const portFile = join(profile, 'DevToolsActivePort');
 for (let i = 0; i < 100 && !existsSync(portFile); i++) await new Promise(r => setTimeout(r, 100));
 const port = readFileSync(portFile, 'utf8').split('\n')[0];

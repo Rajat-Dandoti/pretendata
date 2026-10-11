@@ -1,13 +1,48 @@
 {
   "name": "pretendata",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "description": "Generate synthetic, privacy-safe test data (checksum-valid IDs, DLP false-positive controls, compliance tagging) for QA and DLP/DSPM testing.",
+  "version": "1.0.0",
+  "description": "Synthetic test data with a known answer key, for testing DLP, DSPM, data classification, secret scanning and masking tools. Checksum-valid identifiers, deliberate near-misses, and scoring.",
+  "keywords": [
+    "synthetic-data",
+    "test-data",
+    "dlp",
+    "dspm",
+    "pii",
+    "phi",
+    "pci",
+    "data-classification",
+    "privacy",
+    "secret-scanning",
+    "masking",
+    "anonymization",
+    "aadhaar",
+    "benchmark"
+  ],
+  "homepage": "https://pretendata.voidkit.workers.dev/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rajat-Dandoti/pretendata.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rajat-Dandoti/pretendata/issues"
+  },
   "license": "MIT",
+  "author": "Rajat Dandoti",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "pretendata": "dist-cli/pretendata.js"
   },
+  "files": [
+    "dist-cli",
+    "README.md",
+    "COLUMNS.md",
+    "VALIDATION.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "vite --port=5173 --host=0.0.0.0",
     "build": "vite build",
@@ -22,12 +57,18 @@
     "cli": "tsx bin/pretendata.ts",
     "build:cli": "vite build -c vite.cli.config.ts",
     "build:reference": "tsx scripts/build-reference.ts",
-    "build:offline": "vite build -c vite.offline.config.ts && tsx scripts/inline-offline.ts"
+    "build:offline": "vite build -c vite.offline.config.ts && tsx scripts/inline-offline.ts",
+    "crosscheck": "node scripts/crosscheck/run.mjs",
+    "prepack": "npm run build:cli"
   },
-  "dependencies": {
-    "@faker-js/faker": "^10.3.0",
+  "devDependencies": {
+    "@faker-js/faker": "10.6.0",
     "@hono/node-server": "^2.0.6",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/streamsaver": "^2.0.5",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
     "hono": "^4.12.27",
@@ -35,13 +76,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "streamsaver": "^2.0.6",
-    "tailwind-merge": "^3.5.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@types/streamsaver": "^2.0.5",
+    "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

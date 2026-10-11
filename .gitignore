@@ -16,3 +16,6 @@ xray*.json
 
 # browser smoke test output (downloads, screenshots, Chrome profile)
 smoke/.out/
+
+# Python environment built by npm run crosscheck
+scripts/crosscheck/.venv/

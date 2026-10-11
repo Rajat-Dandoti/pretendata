@@ -13,5 +13,8 @@ for (const [scenario, verify] of steps) {
   if (ok && verify) ok = spawnSync('npx', ['tsx', `smoke/${verify}`], { stdio: 'inherit' }).status === 0;
   if (!ok) failed.push(scenario);
 }
+// Last: the npm package exactly as a user would install it.
+console.log('\n== package');
+if (spawnSync('node', ['smoke/package.verify.mjs'], { stdio: 'inherit' }).status !== 0) failed.push('package');
 console.log(failed.length ? `\nSMOKE FAILED: ${failed.join(', ')}` : '\nALL SMOKE SCENARIOS PASSED');
 process.exit(failed.length ? 1 : 0);

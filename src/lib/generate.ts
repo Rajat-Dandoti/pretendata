@@ -11,7 +11,7 @@ import { applyVariant, validUnderVariants, Formatting, VARIANT_IDS } from './var
  * Bump it whenever a change alters seeded output — `npm test` pins a hash of that output
  * and fails until both are updated together. Recorded in the manifest and share links.
  */
-export const GENERATOR_VERSION: number = 4;
+export const GENERATOR_VERSION: number = 5;
 
 /** Leads every CSV file we write, so Excel reads non-ASCII names (German, Japanese…) as UTF-8. */
 export const UTF8_BOM = '\uFEFF';

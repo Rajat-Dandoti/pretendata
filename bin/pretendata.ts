@@ -8,7 +8,7 @@
 //   pretendata text --pack prompt --count 500 --seed 7
 //   pretendata benchmark india --out india.csv --answer-key india.key.json
 //   pretendata list presets
-import { createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
@@ -193,8 +193,9 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
   }
 }
 
-// Run when executed directly (not when imported by the tests).
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Run when executed directly (not when imported by the tests). npm installs the command as a symlink,
+// so compare real paths: without that the installed command would start and do nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const argv = process.argv.slice(2);
   const outAt = argv.indexOf('--out');
   const outPath = outAt >= 0 ? argv.splice(outAt, 2)[1] : null;

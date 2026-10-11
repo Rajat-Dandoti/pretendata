@@ -19,7 +19,7 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **12 privacy categories**, colour-coded by sensitivity — PII, PHI, PCI, Secrets, Biometric, Network,
   Quasi-Identifier, Statistical, Masked, Non-Sensitive, **DLP-Negative** (checksum-broken false-positive
   controls), and **Chaos** (malformed / hostile values).
-- **165 columns, checksum-valid where a checksum exists** so real detectors actually match — Aadhaar
+- **166 columns, checksum-valid where a checksum exists** so real detectors actually match — Aadhaar
   (Verhoeff), IBAN (mod-97), IMEI/NPI (Luhn), NHS (mod-11), GSTIN (mod-36), VIN, EAN-13, ISIN, and more.
 - **An expectation on every column** — should fire, should not fire, or depends on context — shown in
   the picker and written to the answer key.
@@ -50,7 +50,8 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Region-specific IDs with real check rules** — India (Aadhaar, PAN, GSTIN, UPI, Voter ID, IFSC, ABHA,
   vehicle reg, passport…), US (SSN, ITIN, EIN, NPI, DEA), Canada (SIN), Brazil (CPF, CNPJ), UK (NHS, NINO),
   Spain (DNI, NIE), Netherlands (BSN), France (NIR), Singapore (NRIC), Australia (TFN), China (resident ID),
-  South Africa, UAE (Emirates ID), Saudi (Iqama). Each validator is tested against a published example.
+  South Africa, UAE (Emirates ID), Saudi (Iqama). Each validator is tested against a published example, and 23 of them are cross-checked against
+  independent libraries: see [VALIDATION.md](VALIDATION.md).
 - **Compliance tagging (beta)** — see which regulations (GDPR / HIPAA / DPDP) each column falls under,
   with a per-column footprint breakdown.
 - **Column picker** with search, filters by region and by what a detector should do, and an expandable
@@ -133,6 +134,7 @@ are generated:
 | `npm run build:cli` | Bundle the command-line tool into `dist-cli/pretendata.js` |
 | `npm run build:offline` | Builds the single-file offline version, `dist-offline/pretendata.html` |
 | `npm run build:reference` | Writes a static page per column into `dist/reference/` (format, check, examples). Opt-in; not part of `npm run build` |
+| `npm run crosscheck` | Has python-stdnum and schwifty judge 5,000 generated values per identifier and writes [VALIDATION.md](VALIDATION.md). Needs Python 3 |
 | `npm run pin-seed` | Records the seeded output of new columns in `src/lib/seed-contract.json`. Refuses to overwrite a changed column until `GENERATOR_VERSION` is bumped |
 | `npm run smoke` | Builds, then drives the real app in headless Chrome: generate, export, both large-file paths, keyboard use, answer key, scorecard. Needs Chrome; set `CHROME` to its path if it is not found |
 | `npm run server` | Optional API server (see below) |
@@ -175,18 +177,20 @@ are scored on identical data against the same answer key. They are defined in
 
 | Benchmark | Rows | Columns | What it holds |
 |---|---|---|---|
-| `india` | 10,000 | 22 | Indian identifiers, their near-misses and hard negatives |
-| `global` | 10,000 | 121 | The whole catalog as of benchmark version 1 |
+| `india` | 10,000 | 23 | Indian identifiers, their near-misses and hard negatives |
+| `global` | 10,000 | 166 | The whole catalog as of benchmark version 2 |
 | `secrets` | 10,000 | 17 | Credentials and keys, next to opaque business identifiers |
 
 In the app: *Score a tool* → *Use*, then Download and *Answer key*. From a terminal:
 
 ```bash
 npm run cli -- benchmark india --out india.csv --answer-key india.key.json
-shasum -a 256 india.csv   # c20afeef3ef9bbd89341195dbadfc4716bc847fb45e2c97f6b1375b975cd5070
+shasum -a 256 india.csv   # 7496f2278dafee0694282f40e146c25f509b6ba9ae8698e773cbb8f4949e5dd6
 ```
 
-Run your tool over the file, then load its results and the answer key in *Score a tool*. A benchmark
+Run your tool over the file, then load its results and the answer key in *Score a tool*. This is
+benchmark version 2; version 1 was retired on the day it was published, after the cross-check below
+found four identifiers that were not valid. A benchmark
 is tied to one generator version; when the generator changes, a new benchmark version is published
 and the old one is retired. A synthetic benchmark complements a trial on your own data. It does not
 replace one.
@@ -197,6 +201,13 @@ The same generator runs from a terminal, for CI pipelines and scripts. For the s
 the same bytes as the app's Download button, so one answer key fits both.
 
 ```bash
+npx pretendata --preset "India PII" --rows 1000 --seed 42          # from npm, nothing to clone
+npm install -g pretendata                                          # or install the command
+```
+
+From a checkout, `npm run cli --` is the same command:
+
+```bash
 npm run cli -- --preset "India PII" --rows 1000000 --seed 42 --out india.csv --answer-key india.key.json
 npm run cli -- --columns email,ssn --rows 100 --format ndjson
 npm run cli -- text --pack prompt --count 500 --seed 7 > prompts.ndjson
@@ -205,8 +216,9 @@ npm run cli -- list presets
 npm run cli -- --help
 ```
 
-`npm run build:cli` bundles it into `dist-cli/pretendata.js`, a single Node script (the `bin` entry of this
-package), so `npm link` gives you a `pretendata` command. Output goes to standard output unless `--out`
+`npm run build:cli` bundles it into `dist-cli/pretendata.js`, a single Node script with Faker built in. The
+npm package has no dependencies on purpose: a dependency range would let an install pick a newer Faker,
+and the same seed would then give different data. Output goes to standard output unless `--out`
 is given; large runs are written chunk by chunk and never held in memory.
 
 ## Optional API server
