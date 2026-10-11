@@ -82,8 +82,8 @@ export const BENCHMARKS: Benchmark[] = [
 export const benchmarkById = (id: string) => BENCHMARKS.find(b => b.id === id);
 
 /** The benchmark whose settings a dataset's answer key matches exactly, if any. */
-export function matchBenchmark(m: { columns: { id: string }[]; rowCount: number; seed: number | null; locale: string; sparsityPct?: number; densityPct?: number; headerMode?: string; formatting?: string; seeding?: string; generatorVersion?: number }): Benchmark | undefined {
-  if ((m.sparsityPct ?? 0) !== 0 || (m.densityPct ?? 100) !== 100 || (m.headerMode ?? 'descriptive') !== 'descriptive' || (m.formatting ?? 'canonical') !== 'canonical') return undefined;
+export function matchBenchmark(m: { columns: { id: string }[]; rowCount: number; seed: number | null; locale: string; sparsityPct?: number; densityPct?: number; headerMode?: string; formatting?: string; uniquenessPct?: number; seeding?: string; generatorVersion?: number }): Benchmark | undefined {
+  if ((m.sparsityPct ?? 0) !== 0 || (m.densityPct ?? 100) !== 100 || (m.headerMode ?? 'descriptive') !== 'descriptive' || (m.formatting ?? 'canonical') !== 'canonical' || (m.uniquenessPct ?? 100) !== 100) return undefined;
   if ((m.generatorVersion ?? BENCHMARK_GENERATOR) !== BENCHMARK_GENERATOR) return undefined;
   const ids = m.columns.map(c => c.id).sort().join();
   return BENCHMARKS.find(b => b.rowCount === m.rowCount && b.seed === m.seed && b.locale === m.locale && [...b.columnIds].sort().join() === ids);

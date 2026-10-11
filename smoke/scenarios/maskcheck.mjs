@@ -42,6 +42,14 @@ export default async (page, check) => {
   const md = await page.download(() => page.click('button[aria-label="Export masking report"]'));
   check(readFileSync(md.path, 'utf8').startsWith('# Masking check: masked-by-acme') , `report exported as ${md.name}`);
 
+  // re-identification risk: the HR preset has birth date and gender; nothing was generalised, so nothing improves
+  const riskRows = `[...document.querySelectorAll('[data-role="risk"] tbody tr')].map(tr => [...tr.children].map(td => td.textContent))`;
+  const risk0 = await page.eval(riskRows);
+  check(risk0[0][1] === '1' && parseInt(risk0[1][1]) >= 490 && risk0[1][1] === risk0[1][2], `nearly every row unique on birth date + gender, before and after (${risk0[1].slice(1).join(' → ')})`);
+  await page.click('[data-quasi="dob"]');
+  const risk1 = await page.eval(riskRows);
+  check(risk1[0][1] === risk1[0][2] && Number(risk1[0][1]) > 100 && risk1[1][1].startsWith('0 '), `on gender alone the groups are large (k = ${risk1[0][1]})`);
+
   // an unseeded dataset cannot be checked, and says why
   const unseeded = join(page.downloads, 'unseeded.json');
   writeFileSync(unseeded, JSON.stringify({ ...JSON.parse(readFileSync(key.path, 'utf8')), seed: null }));

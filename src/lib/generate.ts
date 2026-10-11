@@ -72,20 +72,47 @@ export interface RowOptions {
   density?: number;
   /** How identifiers are written: one canonical form, everyday variants, or evasive ones. */
   formatting?: Formatting;
+  /**
+   * Share of rows (1–100) whose quasi-identifiers are their own. The rest share theirs (birth date,
+   * gender, zip, city, ethnicity) with other rows, as different people do in real data — which is
+   * what k-anonymity measures. At 100 nearly every row is unique on them.
+   */
+  uniqueness?: number;
 }
 
-/** Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx. */
-export function makeRow(cols: ColumnDef[], o: RowOptions = {}): Record<string, any> {
-  const { sparsity = 0, locale = 'en', density = 100, formatting = 'canonical' } = o;
+/** Quasi-identifier columns that rows can share with each other. */
+export const QUASI_IDS = ['zipCode', 'dob', 'gender', 'ethnicity', 'city', 'age'];
+const SHARED_VALUE_IDS = ['zipCode', 'ethnicity', 'city']; // the rest follow from the shared birth date and sex
+
+/** The quasi-identifiers of one group of people. */
+interface QiGroup { dob: Date; sex: 'female' | 'male'; values: Record<string, unknown> }
+/** Carries the groups from row to row within one run (or one stream chunk). */
+export interface RowState { groups: QiGroup[] }
+export const newRowState = (): RowState => ({ groups: [] });
+
+/**
+ * Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx.
+ * `state` links rows of one run together; without it every row stands alone.
+ */
+export function makeRow(cols: ColumnDef[], o: RowOptions = {}, state?: RowState): Record<string, any> {
+  const { sparsity = 0, locale = 'en', density = 100, formatting = 'canonical', uniqueness = 100 } = o;
   // 'mix' is resolved once per row so the phone number matches the row's name/address.
   const rowLocale = resolveLocale(locale);
   const f = getFaker(rowLocale);
-  const dob = f.date.birthdate({ min: 18, max: 80, mode: 'age' });
+  // A row that shares its quasi-identifiers joins an existing group three times in four, and
+  // otherwise founds one for later rows to join — groups of about four. A founder late in the run
+  // may never get a companion and stays unique: that happens to a quarter of founders, a sixteenth
+  // of sharing rows, so the share of sharing rows is raised by that much to land on the target.
+  const LONE_FOUNDERS = 1 / 16;
+  const ownShare = Math.max(0, (uniqueness / 100 - LONE_FOUNDERS) / (1 - LONE_FOUNDERS));
+  const shares = !!state && uniqueness < 100 && Math.random() >= ownShare;
+  const group = shares && state!.groups.length > 0 && Math.random() < 0.75 ? state!.groups[Math.floor(Math.random() * state!.groups.length)] : null;
+  const dob = group?.dob ?? f.date.birthdate({ min: 18, max: 80, mode: 'age' });
   // Age as of faker's reference date (the seed's fixed "now", else the clock), in UTC like
   // the dob column: one year less until this year's birthday has passed.
   const ref = f.defaultRefDate();
   const monthDay = (d: Date) => d.getUTCMonth() * 100 + d.getUTCDate();
-  const sex = f.helpers.arrayElement(['female', 'male'] as const);
+  const sex = group?.sex ?? f.helpers.arrayElement(['female', 'male'] as const);
   // Straight from the gendered list: `person.firstName(sex)` blends in Faker's generic names,
   // and ~6% of those belong to the other list.
   const gendered = f.definitions.person.first_name[sex];
@@ -102,8 +129,10 @@ export function makeRow(cols: ColumnDef[], o: RowOptions = {}): Record<string, a
   for (const col of cols) {
     row[col.id] = sparsity > 0 && Math.random() < sparsity / 100 ? null
       : density < 100 && DETECT_IDS.has(col.id) && Math.random() >= density / 100 ? f.commerce.productName()
+      : group && col.id in group.values ? group.values[col.id]
       : applyVariant(col.id, col.generate(fctx), formatting);
   }
+  if (shares && !group) state!.groups.push({ dob, sex, values: Object.fromEntries(SHARED_VALUE_IDS.filter(id => id in row).map(id => [id, row[id]])) });
   return row;
 }
 
@@ -137,7 +166,8 @@ export interface ChunkOptions extends RowOptions {
 export function generateChunkRows(cols: ColumnDef[], o: Omit<ChunkOptions, 'format' | 'headers'>): Record<string, any>[] {
   if (o.seed !== null) applySeed(chunkSeed(o.seed, o.chunk));
   const out = new Array(o.rows);
-  for (let i = 0; i < o.rows; i++) out[i] = makeRow(cols, o);
+  const state = newRowState();
+  for (let i = 0; i < o.rows; i++) out[i] = makeRow(cols, o, state);
   return out;
 }
 
@@ -169,7 +199,8 @@ export function generateRows(opts: GenerateOptions): Record<string, any>[] {
   applySeed(opts.seed ?? null);
   const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
   const out = new Array(opts.rowCount);
-  for (let i = 0; i < opts.rowCount; i++) out[i] = makeRow(cols, opts);
+  const state = newRowState();
+  for (let i = 0; i < opts.rowCount; i++) out[i] = makeRow(cols, opts, state);
   return out;
 }
 
@@ -301,6 +332,19 @@ export function _selfCheck() {
     if (hasEvasive !== (formatting === 'evasive')) throw new Error(`FAIL: ${formatting} formatting and evasive forms`);
   }
   if (generateRows({ columnIds: ['email', 'aadhaar_invalid'], rowCount: 50, seed: 17, formatting: 'evasive' }).some(r => !r.email.includes('@') || !/^\d{12}$/.test(r.aadhaar_invalid))) throw new Error('FAIL: formatting must leave other columns alone');
+  // uniqueness: the requested share of rows stays unique on the quasi-identifiers; the rest form
+  // groups of different people; names still match the group's gender; default is untouched.
+  const qi = ['dob', 'gender', 'zipCode', 'city'];
+  const uniqueShare = (rs: Record<string, any>[]) => { const n = new Map<string, number>(); for (const r of rs) { const k = qi.map(q => r[q]).join('|'); n.set(k, (n.get(k) ?? 0) + 1); } return rs.filter(r => n.get(qi.map(q => r[q]).join('|')) === 1).length / rs.length; };
+  for (const want of [75, 50, 25, 10]) {
+    const people = generateRows({ columnIds: ['firstName', 'ssn', ...qi], rowCount: 4000, seed: 19, uniqueness: want });
+    const got = uniqueShare(people) * 100;
+    if (Math.abs(got - want) > 2.5) throw new Error(`FAIL: uniqueness ${want}% gave ${got.toFixed(1)}% unique rows`);
+    if (new Set(people.map(r => r.ssn)).size !== people.length) throw new Error('FAIL: rows sharing quasi-identifiers must still be different people');
+    const names = getFaker('en').definitions.person.first_name, male = new Set(names.male), female = new Set(names.female);
+    if (people.some(r => (r.gender === 'female' ? male : female).has(r.firstName) && !(r.gender === 'female' ? female : male).has(r.firstName))) throw new Error('FAIL: a shared gender must still match the first name');
+  }
+  if (uniqueShare(generateRows({ columnIds: qi, rowCount: 4000, seed: 19 })) < 0.99) throw new Error('FAIL: by default rows are unique on the quasi-identifiers');
   // checksum columns hold their contract; near-miss columns never accidentally pass.
   for (const r of generateRows({ columnIds: ['creditCard', 'creditCard_invalid', 'vin', 'vin_invalid'], rowCount: 2000, seed: 5 })) {
     if (!luhnValid(r.creditCard) || luhnValid(r.creditCard_invalid)) throw new Error(`FAIL: credit card Luhn: ${r.creditCard} / ${r.creditCard_invalid}`);

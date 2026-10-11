@@ -41,6 +41,7 @@ Generate
   --sparsity <0-90>        % of cells left empty
   --density <1-100>        % of rows in which a should-fire column holds the real value
   --formatting <f>         ${FORMATTINGS.join(' | ')}
+  --uniqueness <1-100>     % of rows with their own birth date, gender, zip and city; the rest share them in groups
   --headers <mode>         ${HEADER_MODES.join(' | ')}
   --structure <s>          flat | grouped | semantic | deep (JSON and NDJSON up to ${IN_MEMORY_THRESHOLD.toLocaleString()} rows)
   --depth <1-10>           nesting depth for --structure deep
@@ -81,7 +82,7 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
     const { values: v, positionals } = parseArgs({
       args: argv, allowPositionals: true, options: {
         preset: { type: 'string' }, columns: { type: 'string' }, rows: { type: 'string' }, seed: { type: 'string' }, format: { type: 'string' },
-        locale: { type: 'string' }, sparsity: { type: 'string' }, density: { type: 'string' }, formatting: { type: 'string' }, headers: { type: 'string' },
+        locale: { type: 'string' }, sparsity: { type: 'string' }, density: { type: 'string' }, formatting: { type: 'string' }, headers: { type: 'string' }, uniqueness: { type: 'string' },
         structure: { type: 'string' }, depth: { type: 'string' }, 'no-bom': { type: 'boolean' }, 'answer-key': { type: 'string' },
         pack: { type: 'string' }, count: { type: 'string' }, help: { type: 'boolean', short: 'h' },
       },
@@ -116,7 +117,7 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
       const cols = AVAILABLE_COLUMNS.filter(c => b.columnIds.includes(c.id));
       await io.write(UTF8_BOM + rowsToCSV(generateRows({ columnIds: b.columnIds, rowCount: b.rowCount, seed: b.seed, locale: b.locale }), cols));
       if (v['answer-key']) {
-        const key = buildManifest(b.columnIds, { seed: b.seed, rowCount: b.rowCount, sparsityPct: 0, locale: b.locale, seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical' });
+        const key = buildManifest(b.columnIds, { seed: b.seed, rowCount: b.rowCount, sparsityPct: 0, locale: b.locale, seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical', uniquenessPct: 100 });
         io.writeFile(v['answer-key'], JSON.stringify(key, null, 2));
       }
       return 0;
@@ -138,7 +139,7 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
     const depth = integer(v.depth, 'depth', 1, 10, 3);
     // A region-focused preset carries its locale, as in the app; an explicit --locale wins.
     const locale = oneOf(v.locale, localeIds, 'locale', (v.preset && PRESET_LOCALES[v.preset]) || 'en');
-    const row = { sparsity: integer(v.sparsity, 'sparsity', 0, 90, 0), locale, density: integer(v.density, 'density', 1, 100, 100), formatting };
+    const row = { sparsity: integer(v.sparsity, 'sparsity', 0, 90, 0), locale, density: integer(v.density, 'density', 1, 100, 100), formatting, uniqueness: integer(v.uniqueness, 'uniqueness', 1, 100, 100) };
     const bom = v['no-bom'] ? '' : UTF8_BOM;
     const large = rowCount > IN_MEMORY_THRESHOLD;
 
@@ -165,7 +166,7 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
     }
 
     if (v['answer-key']) {
-      const key = buildManifest(columnIds, { seed, rowCount, sparsityPct: row.sparsity, locale, seeding: large ? 'chunked' : 'whole', densityPct: row.density, headerMode: headers, formatting });
+      const key = buildManifest(columnIds, { seed, rowCount, sparsityPct: row.sparsity, locale, seeding: large ? 'chunked' : 'whole', densityPct: row.density, headerMode: headers, formatting, uniquenessPct: row.uniqueness });
       io.writeFile(v['answer-key'], JSON.stringify(key, null, 2));
     }
     return 0;

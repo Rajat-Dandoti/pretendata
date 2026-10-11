@@ -8,6 +8,7 @@ import { buildManifest, rowsFromManifest } from './manifest';
 import type { Manifest, ManifestColumn } from './manifest';
 import { parseCSV } from './scorecard';
 import { VALIDATORS } from './validators';
+import { kAnonymity, lDiversity, KAnonymity, LDiversity } from './reident';
 
 export type Row = Record<string, unknown>;
 
@@ -69,6 +70,39 @@ export interface MaskReport {
 
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
+/** Which masked header holds each answer-key column: matched by header, JSON key, display name or id. */
+function headerFinder(masked: Row[]): (c: ManifestColumn) => string | null {
+  const byNorm = new Map((masked.length ? Object.keys(masked[0]) : []).map(h => [norm(h), h]));
+  return c => [c.header, c.key, c.name, c.id].map(n => byNorm.get(norm(n ?? ''))).find(Boolean) ?? null;
+}
+
+export interface RiskReport {
+  /** Quasi-identifier columns measured, and where each was found in the masked file (null: dropped). */
+  quasi: { id: string; name: string; maskedHeader: string | null }[];
+  before: KAnonymity;
+  after: KAnonymity;
+  sensitive?: { id: string; name: string; before: LDiversity; after: LDiversity | null };
+}
+
+/**
+ * Re-identification risk before and after: k-anonymity over the chosen quasi-identifiers, and
+ * l-diversity of one sensitive column within those groups. A quasi-identifier missing from the
+ * masked file was suppressed, which is a valid way to anonymise, so it is simply left out of "after".
+ */
+export function reidentRisk(manifest: Pick<Manifest, 'columns'>, originals: Row[], masked: Row[], quasiIds: string[], sensitiveId?: string): RiskReport {
+  const headerOf = headerFinder(masked);
+  const cols = manifest.columns.filter(c => quasiIds.includes(c.id));
+  const quasi = cols.map(c => ({ id: c.id, name: c.name, maskedHeader: headerOf(c) }));
+  const kept = quasi.map(q => q.maskedHeader).filter((h): h is string => h !== null);
+  const out: RiskReport = { quasi, before: kAnonymity(originals, cols.map(c => c.id)), after: kAnonymity(masked, kept) };
+  const s = manifest.columns.find(c => c.id === sensitiveId);
+  if (s) {
+    const h = headerOf(s);
+    out.sensitive = { id: s.id, name: s.name, before: lDiversity(originals, cols.map(c => c.id), s.id), after: h ? lDiversity(masked, kept, h) : null };
+  }
+  return out;
+}
+
 /**
  * Compare a masked table with the original rows the answer key describes.
  * `originals` are keyed by column id (as `rowsFromManifest` returns them). Rows are compared
@@ -77,9 +111,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 export function checkMasking(manifest: Pick<Manifest, 'columns'>, originals: Row[], masked: Row[], opts: { includeContext?: boolean } = {}): MaskReport {
   const aligned = originals.length === masked.length;
   const headers = masked.length ? Object.keys(masked[0]) : [];
-  const byNorm = new Map(headers.map(h => [norm(h), h]));
-  // A masked column can be named by header, JSON key, display name or id.
-  const headerOf = (c: ManifestColumn) => [c.header, c.key, c.name, c.id].map(n => byNorm.get(norm(n ?? ''))).find(Boolean) ?? null;
+  const headerOf = headerFinder(masked);
   const matched = new Set<string>();
   const sensitive = manifest.columns.filter(c => c.expectation === 'detect' || (opts.includeContext && c.expectation === 'context'));
 
@@ -151,7 +183,7 @@ export function checkMasking(manifest: Pick<Manifest, 'columns'>, originals: Row
 
 const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`);
 
-export function maskReportMarkdown(r: MaskReport, tool = ''): string {
+export function maskReportMarkdown(r: MaskReport, tool = '', risk?: RiskReport): string {
   const lines = [
     `# Masking check${tool ? `: ${tool}` : ''}`,
     '',
@@ -165,6 +197,20 @@ export function maskReportMarkdown(r: MaskReport, tool = ''): string {
       ? `| ${c.name} | not in the masked file | ${c.leakedElsewhere} | — | — | — | — | — |`
       : `| ${c.name} | ${c.unchanged} of ${c.rows} | ${c.leakedElsewhere} | ${c.keptLastFour} | ${c.inconsistent}${c.repeatedOriginals ? '' : ' (no repeats to test)'} | ${c.collisions} | ${pct(c.formatKept)} | ${pct(c.stillValid)} |`);
   }
+  if (risk) {
+    const share = (k: KAnonymity) => `${(k.uniqueShare * 100).toFixed(1)}%`;
+    lines.push('', '## Re-identification risk', '',
+      `Quasi-identifiers: ${risk.quasi.map(q => q.name + (q.maskedHeader === null ? ' (dropped)' : '')).join(', ')}.`, '',
+      '| Measure | Original | After masking |', '|---|---|---|',
+      `| k (smallest group) | ${risk.before.k} | ${risk.after.k} |`,
+      `| Rows unique on the quasi-identifiers | ${risk.before.uniqueRows} (${share(risk.before)}) | ${risk.after.uniqueRows} (${share(risk.after)}) |`,
+      `| Rows in groups smaller than 5 | ${risk.before.rowsUnder5} | ${risk.after.rowsUnder5} |`);
+    if (risk.sensitive) {
+      const a = risk.sensitive.after;
+      lines.push(`| l for ${risk.sensitive.name} (fewest distinct values in a group) | ${risk.sensitive.before.l} | ${a ? a.l : 'column dropped'} |`,
+        `| Rows whose group gives ${risk.sensitive.name} away | ${risk.sensitive.before.rowsDisclosed} | ${a ? a.rowsDisclosed : '—'} |`);
+    }
+  }
   lines.push('', 'Limits: values are compared cell by cell, with and without separators. An original embedded inside longer text is not found. Consistency can only be judged where an original value occurs more than once.');
   return lines.join('\n') + '\n';
 }
@@ -172,7 +218,7 @@ export function maskReportMarkdown(r: MaskReport, tool = ''): string {
 // ---------- self-check (run via `npm test`) ----------
 export function _selfCheck() {
   const m = buildManifest(['firstName', 'email', 'ssn', 'creditCard', 'salary'], {
-    seed: 8, rowCount: 400, sparsityPct: 0, locale: 'en', seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical',
+    seed: 8, rowCount: 400, sparsityPct: 0, locale: 'en', seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical', uniquenessPct: 100,
   });
   const orig = rowsFromManifest(m);
   // A well-behaved tokeniser: the same input always gives the same token; SSNs keep their shape and last four.
@@ -214,5 +260,18 @@ export function _selfCheck() {
   const md = maskReportMarkdown(r, 'Example');
   if (!md.includes('**5 original values survived masking.**') || !md.includes('| SSN | 3 of 400 |')) throw new Error('FAIL: masking report');
   if (!maskReportMarkdown(ok).includes('No original value survived')) throw new Error('FAIL: clean masking report');
+  // Re-identification risk: half the rows unique going in. Generalising birth date to a decade and zip to
+  // its first digit leaves at most 70 groups for 3,000 rows; suppressing a column is counted as such.
+  // (A year and a three-digit zip would not do: 63,000 possible groups, so nearly every row stays alone.)
+  const pm = buildManifest(['firstName', 'dob', 'gender', 'zipCode', 'diagnosisCode'], {
+    seed: 4, rowCount: 3000, sparsityPct: 0, locale: 'en', seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical', uniquenessPct: 50,
+  });
+  const people = rowsFromManifest(pm);
+  const generalised: Row[] = people.map(p => ({ 'Date of Birth': String(p.dob).slice(0, 3) + '0s', 'Zip Code': String(p.zipCode).slice(0, 1) + 'xxxx', 'ICD-10 Diagnosis': p.diagnosisCode }));
+  const risk = reidentRisk(pm, people, generalised, ['dob', 'gender', 'zipCode'], 'diagnosisCode');
+  if (Math.abs(risk.before.uniqueShare - 0.5) > 0.03 || risk.before.k !== 1) throw new Error(`FAIL: risk before ${JSON.stringify(risk.before)}`);
+  if (risk.after.uniqueShare > 0.01 || risk.after.groups > 70 || risk.after.k < 2) throw new Error(`FAIL: generalising should leave no row alone (${JSON.stringify(risk.after)})`);
+  if (risk.quasi.find(q => q.id === 'gender')!.maskedHeader !== null || !risk.sensitive?.after) throw new Error('FAIL: a dropped quasi-identifier is reported as dropped');
+  if (!maskReportMarkdown(ok, '', risk).includes('Gender (dropped)')) throw new Error('FAIL: risk section of the report');
   console.log('maskcheck: all self-checks passed');
 }

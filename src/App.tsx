@@ -62,6 +62,8 @@ function formatRows(n: number): string {
 
 // Share of rows in which a should-fire column holds the real value.
 const DENSITIES = [100, 50, 25, 10, 5, 1];
+// Share of rows with their own quasi-identifiers (birth date, gender, zip, city).
+const UNIQUENESS = [100, 75, 50, 25, 10];
 
 const CONFIG_KEY = 'pretendata:config';
 const KNOWN_COLUMN_IDS = new Set(AVAILABLE_COLUMNS.map(c => c.id));
@@ -90,6 +92,7 @@ function loadInitialConfig() {
     headerMode: (HEADER_MODES.includes(s?.h as HeaderMode) ? s!.h! : 'descriptive') as HeaderMode,
     density: DENSITIES.includes(Number(s?.d)) ? Number(s!.d) : 100,
     formatting: (FORMATTINGS.includes(s?.fm as Formatting) ? s!.fm! : 'canonical') as Formatting,
+    uniqueness: UNIQUENESS.includes(Number(s?.u)) ? Number(s!.u) : 100,
   };
 }
 
@@ -110,6 +113,7 @@ export default function App() {
   const [headerMode, setHeaderMode] = useState<HeaderMode>(initial.headerMode);
   const [density, setDensity] = useState<number>(initial.density);
   const [formatting, setFormatting] = useState<Formatting>(initial.formatting);
+  const [uniqueness, setUniqueness] = useState<number>(initial.uniqueness);
   const [gzip, setGzip] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ written: number; total: number } | null>(null);
   const [seedStr, setSeedStr] = useState<string>(initial.seedStr);
@@ -178,7 +182,8 @@ export default function App() {
     ...(headerMode !== 'descriptive' && { h: headerMode }),
     ...(density !== 100 && { d: density }),
     ...(formatting !== 'canonical' && { fm: formatting }),
-  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, format, locale, headerMode, density, formatting]);
+    ...(uniqueness !== 100 && { u: uniqueness }),
+  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, format, locale, headerMode, density, formatting, uniqueness]);
 
   // Remember it for the next visit.
   useEffect(() => {
@@ -213,6 +218,7 @@ export default function App() {
     densityPct: density,
     headerMode,
     formatting,
+    uniquenessPct: uniqueness,
   });
 
   // Group columns by category
@@ -310,7 +316,7 @@ export default function App() {
 
   // Everything that decides the values (not how they are written out). Rows already in memory
   // are reused for another download, and shown in the table, only while this still matches.
-  const dataKey = JSON.stringify([AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id)).map(c => c.id), rowCount, seedNum, sparsity, locale, density, formatting]);
+  const dataKey = JSON.stringify([AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id)).map(c => c.id), rowCount, seedNum, sparsity, locale, density, formatting, uniqueness]);
   const hasRows = generatedData.length > 0 && generatedKey === dataKey;
   // A JSON array has to be built whole, so a run too large for memory is written as NDJSON.
   const effectiveFormat: ExportFormat = isLarge && format === 'json' ? 'ndjson' : format;
@@ -331,6 +337,7 @@ export default function App() {
         locale,
         density,
         formatting,
+        uniqueness,
         signal: ac.signal,
         onProgress: (done, total) => setStreamProgress({ written: done, total }),
       });
@@ -371,6 +378,7 @@ export default function App() {
           locale,
           density,
           formatting,
+          uniqueness,
           headers: headerMode,
           gzip,
           signal: ac.signal,
@@ -404,7 +412,7 @@ export default function App() {
     setRowCount(b.rowCount);
     setSeedStr(String(b.seed));
     setLocale(b.locale);
-    setSparsity(0); setDensity(100); setFormatting('canonical'); setHeaderMode('descriptive'); setFormat('csv');
+    setSparsity(0); setDensity(100); setFormatting('canonical'); setUniqueness(100); setHeaderMode('descriptive'); setFormat('csv');
     setShowScorecard(false);
     setToast({ text: `Benchmark v${BENCHMARK_VERSION} · ${b.name} loaded. Download it and its answer key, run your tool, then score the results.` });
   };
@@ -636,6 +644,19 @@ export default function App() {
                     { value: 'mixed', label: 'Mixed (spaces, dashes, labels)' },
                     { value: 'evasive', label: 'Evasive (+ full-width, hidden, base64)' },
                   ]}
+                />
+              </div>
+              <div className="space-y-2">
+                <span className={cn(T.body, 'font-medium flex items-center gap-1.5')}>
+                  Quasi-identifier uniqueness
+                  <Tip text="By default nearly every row is unique on birth date, gender, zip and city. Lower this and the rest of the rows share those values in groups of about four different people, as real populations do. Use it to test anonymisation: measure k-anonymity before and after in Check masking.">
+                    <Info size={ICON.micro} className="text-slate-400" />
+                  </Tip>
+                </span>
+                <Dropdown
+                  value={String(uniqueness)}
+                  onChange={(v) => setUniqueness(Number(v))}
+                  options={UNIQUENESS.map(u => ({ value: String(u), label: u === 100 ? 'Every row its own' : `${u}% unique, the rest in groups` }))}
                 />
               </div>
               <div className="space-y-2">

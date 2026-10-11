@@ -17,6 +17,7 @@ export interface StreamOptions {
   locale?: LocaleId;
   density?: number;
   formatting?: Formatting;
+  uniqueness?: number;
   headers?: HeaderMode;
   /** Write the file gzip-compressed (.gz). Needs the browser's CompressionStream. */
   gzip?: boolean;
@@ -32,6 +33,7 @@ export interface MemoryOptions {
   locale?: LocaleId;
   density?: number;
   formatting?: Formatting;
+  uniqueness?: number;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -262,6 +264,7 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
           locale: opts.locale,
           density: opts.density,
           formatting: opts.formatting,
+          uniqueness: opts.uniqueness,
           headers: opts.headers,
         });
       }

@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { X, Upload, KeyRound, FileDown } from 'lucide-react';
 import type { Manifest } from '../lib/manifest';
-import { checkMasking, maskReportMarkdown, parseTable, MaskReport, Row } from '../lib/maskcheck';
+import { checkMasking, maskReportMarkdown, parseTable, reidentRisk, MaskReport, Row } from '../lib/maskcheck';
+import { QUASI_IDS } from '../lib/generate';
+import { Dropdown } from '../lib/ui';
 import { regenerateInWorker } from '../lib/streaming';
 import { downloadText } from '../lib/exporters';
 import { Button, T } from '../lib/ui';
@@ -19,6 +21,9 @@ export default function MaskCheck({ onClose }: { onClose: () => void }) {
   const [masked, setMasked] = useState<{ rows: Row[]; name: string } | null>(null);
   const [originals, setOriginals] = useState<Row[] | null>(null);
   const [includeContext, setIncludeContext] = useState(false);
+  // Quasi-identifiers to measure k-anonymity over (null: the usual ones present in the dataset), and one sensitive column for l-diversity.
+  const [quasi, setQuasi] = useState<string[] | null>(null);
+  const [sensitive, setSensitive] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,6 +55,9 @@ export default function MaskCheck({ onClose }: { onClose: () => void }) {
 
   const report: MaskReport | null = manifest && masked && originals ? checkMasking(manifest.m, originals, masked.rows, { includeContext }) : null;
   const tool = masked?.name.replace(/\.[^.]+$/, '') ?? '';
+  const quasiIds = quasi ?? manifest?.m.columns.filter(c => QUASI_IDS.includes(c.id)).map(c => c.id) ?? [];
+  const risk = report && originals && quasiIds.length > 0 ? reidentRisk(manifest!.m, originals, masked!.rows, quasiIds, sensitive || undefined) : null;
+  const share = (x: number) => `${(x * 100).toFixed(1)}%`;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/40" onClick={onClose}>
@@ -99,7 +107,7 @@ export default function MaskCheck({ onClose }: { onClose: () => void }) {
                   Also check context columns (dates, cities, job titles…)
                 </label>
                 <Button className="ml-auto" aria-label="Export masking report"
-                  onClick={() => downloadText(maskReportMarkdown(report, tool), 'pretendata.masking-check.md', 'text/markdown')}>
+                  onClick={() => downloadText(maskReportMarkdown(report, tool, risk ?? undefined), 'pretendata.masking-check.md', 'text/markdown')}>
                   <FileDown size={14} /> Markdown
                 </Button>
               </div>
@@ -137,6 +145,51 @@ export default function MaskCheck({ onClose }: { onClose: () => void }) {
                   </tbody>
                 </table>
               </div>
+              <div className="border-t border-slate-200 pt-4 space-y-3" data-role="risk">
+                <div>
+                  <span className={cn(T.label, 'block')}>Re-identification risk</span>
+                  <span className={T.meta}>How many rows share each combination of quasi-identifiers, before and after. k is the size of the smallest group; a row that is alone in its group can be re-identified from these columns alone.</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {manifest!.m.columns.filter(c => c.expectation !== 'ignore' || QUASI_IDS.includes(c.id)).map(c => {
+                    const on = quasiIds.includes(c.id);
+                    return (
+                      <button key={c.id} type="button" aria-pressed={on} data-quasi={c.id}
+                        onClick={() => setQuasi(on ? quasiIds.filter(q => q !== c.id) : [...quasiIds, c.id])}
+                        className={cn('text-xs px-2 py-1 rounded-md border', on ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50')}>
+                        {c.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={T.meta}>Sensitive column for l-diversity</span>
+                  <Dropdown className="w-56" value={sensitive} onChange={setSensitive}
+                    options={[{ value: '', label: 'None' }, ...manifest!.m.columns.filter(c => !quasiIds.includes(c.id)).map(c => ({ value: c.id, label: c.name }))]} />
+                </div>
+                {risk ? (
+                  <table className="text-sm border border-slate-200 rounded-lg overflow-hidden w-full">
+                    <thead className="bg-slate-50 text-slate-500 text-left"><tr>{['Measure', 'Original', 'After masking'].map(h => <th key={h} className="px-3 py-2 font-medium border-b border-slate-200">{h}</th>)}</tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {([
+                        ['k (smallest group)', risk.before.k, risk.after.k],
+                        ['Rows unique on these columns', `${risk.before.uniqueRows.toLocaleString()} (${share(risk.before.uniqueShare)})`, `${risk.after.uniqueRows.toLocaleString()} (${share(risk.after.uniqueShare)})`],
+                        ['Rows in groups smaller than 5', risk.before.rowsUnder5.toLocaleString(), risk.after.rowsUnder5.toLocaleString()],
+                        ...(risk.sensitive ? [
+                          [`l for ${risk.sensitive.name}`, risk.sensitive.before.l, risk.sensitive.after ? risk.sensitive.after.l : 'column dropped'],
+                          [`Rows whose group gives ${risk.sensitive.name} away`, risk.sensitive.before.rowsDisclosed.toLocaleString(), risk.sensitive.after ? risk.sensitive.after.rowsDisclosed.toLocaleString() : '—'],
+                        ] : []),
+                      ] as [string, React.ReactNode, React.ReactNode][]).map(([m, a, b]) => (
+                        <tr key={m}><td className="px-3 py-1.5 text-slate-700">{m}</td><td className="px-3 py-1.5 font-mono text-xs text-slate-600" data-before>{a}</td><td className="px-3 py-1.5 font-mono text-xs text-slate-600" data-after>{b}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : <p className={T.meta}>Pick at least one quasi-identifier.</p>}
+                {risk && risk.quasi.some(q => q.maskedHeader === null) && (
+                  <p className={T.meta}>Not in the masked file, so left out of "after": {risk.quasi.filter(q => q.maskedHeader === null).map(q => q.name).join(', ')}.</p>
+                )}
+              </div>
+
               <p className={T.meta}>
                 Values are compared cell by cell, with and without separators; an original embedded inside longer text is not found.
                 Consistency can only be judged where an original value occurs more than once.

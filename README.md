@@ -30,6 +30,8 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Masking check** — load a seeded dataset's answer key and the same data after your masking or
   tokenisation tool has run. The originals are rebuilt from the key (never uploaded) and compared: values
   left unchanged, values that leaked into another cell, inconsistent tokens, collisions, format kept.
+  It also reports re-identification risk before and after: k-anonymity over the quasi-identifiers you
+  pick, and l-diversity of a sensitive column.
 - **Text and AI prompts** — emails, support tickets, chat, clinical notes, log lines and prompts with
   identifiers embedded in the prose. Each document lists its entities (start, end, type, value) as its
   own answer key, for testing mail and chat DLP, entity recognisers and AI guardrails.
@@ -51,9 +53,11 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   locale support, shareable config links, and large-dataset streaming (up to 100M rows) to a single
   file in any browser.
 - Responsive layout — off-canvas sidebars on mobile, collapsible panels on desktop.
-- **Harder tests from three settings** — *Headers*: descriptive, neutral (`col_01` …) or misleading (real
+- **Harder tests from four settings** — *Headers*: descriptive, neutral (`col_01` …) or misleading (real
   names on the wrong columns), to see whether a tool reads values or trusts column names.
   *Identifier density*: real identifiers in only 50% down to 1% of rows, to test scanners that sample.
+  *Quasi-identifier uniqueness*: make 90% down to 25% of rows share their birth date, gender, zip and city
+  with other people, so anonymisation has realistic groups to work on.
   *Identifier formatting*: the same valid values written with spaces, dashes or labels (mixed), or with
   full-width digits, invisible characters, dots and base64 (evasive).
 - **One Download button** — pick CSV, JSON, NDJSON or SQL beside it. The table always shows a live sample
@@ -184,11 +188,11 @@ SPA from `dist/`.
 
 - `GET /api/columns` — column catalog (id, name, category, region, validation, expectation, framework tags) + colors.
 - `GET /api/presets` — named column bundles.
-- `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, density?, headers?, formatting?, format?, structure?, nestingDepth? }`.
+- `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, density?, headers?, formatting?, uniqueness?, format?, structure?, nestingDepth? }`.
   `format` ∈ `json` (default) · `csv` · `ndjson` · `sql`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`;
   `rowCount` is an integer up to 100,000; `nestingDepth` is clamped to 1–10; `density` is 1–100;
   `headers` ∈ `descriptive` · `neutral` · `misleading` (CSV and flat JSON/NDJSON);
-  `formatting` ∈ `canonical` · `mixed` · `evasive`.
+  `formatting` ∈ `canonical` · `mixed` · `evasive`; `uniqueness` is 1–100.
 
 ```bash
 curl -X POST localhost:8787/api/generate -H 'content-type: application/json' \

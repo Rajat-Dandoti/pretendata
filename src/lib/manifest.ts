@@ -23,6 +23,8 @@ export interface RunMeta {
   headerMode: HeaderMode;
   /** How identifiers are written. Anything but 'canonical' means a column mixes several forms of valid values. */
   formatting: Formatting;
+  /** Share of rows (1–100) with their own quasi-identifiers; the rest share them in groups. */
+  uniquenessPct: number;
 }
 
 export interface ManifestColumn {
@@ -95,21 +97,21 @@ export function rowsFromManifest(m: Manifest): Record<string, any>[] {
   }
   const columnIds = m.columns.map(c => c.id);
   if (m.seeding === 'whole') {
-    return generateRows({ columnIds, rowCount: m.rowCount, sparsity: m.sparsityPct, seed: m.seed, locale: m.locale, density: m.densityPct, formatting: m.formatting });
+    return generateRows({ columnIds, rowCount: m.rowCount, sparsity: m.sparsityPct, seed: m.seed, locale: m.locale, density: m.densityPct, formatting: m.formatting, uniqueness: m.uniquenessPct });
   }
   const cols = AVAILABLE_COLUMNS.filter(c => columnIds.includes(c.id));
   const size = m.chunkRows ?? STREAM_CHUNK_ROWS;
   const out: Record<string, any>[] = [];
   for (let chunk = 0; chunk * size < m.rowCount; chunk++) {
     const rows = Math.min(size, m.rowCount - chunk * size);
-    out.push(...generateChunkRows(cols, { seed: m.seed, chunk, rows, sparsity: m.sparsityPct, locale: m.locale, density: m.densityPct, formatting: m.formatting }));
+    out.push(...generateChunkRows(cols, { seed: m.seed, chunk, rows, sparsity: m.sparsityPct, locale: m.locale, density: m.densityPct, formatting: m.formatting, uniqueness: m.uniquenessPct }));
   }
   return out;
 }
 
 // ---------- self-check (run via `npm test`) ----------
 export function _selfCheck() {
-  const meta: RunMeta = { seed: 1, rowCount: 10, sparsityPct: 20, locale: 'en_IN', seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical' };
+  const meta: RunMeta = { seed: 1, rowCount: 10, sparsityPct: 20, locale: 'en_IN', seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical', uniquenessPct: 100 };
   const m = buildManifest(['aadhaar', 'email', 'aadhaar_invalid', 'createdAt'], meta);
   const col = (id: string) => m.columns.find(c => c.id === id)!;
   if (col('aadhaar').validation !== 'verhoeff' || col('aadhaar').region !== 'IN' || col('aadhaar').expectation !== 'detect') {
@@ -144,6 +146,8 @@ export function _selfCheck() {
   if (JSON.stringify(rowsFromManifest(fromFile(thin))) !== JSON.stringify(generateRows({ columnIds: ids, rowCount: 10, sparsity: 20, seed: 1, locale: 'en_IN', density: 30 }))) throw new Error('FAIL: rowsFromManifest (density)');
   const written = buildManifest(ids, { ...meta, formatting: 'evasive' });
   if (JSON.stringify(rowsFromManifest(fromFile(written))) !== JSON.stringify(generateRows({ columnIds: ids, rowCount: 10, sparsity: 20, seed: 1, locale: 'en_IN', formatting: 'evasive' }))) throw new Error('FAIL: rowsFromManifest (formatting)');
+  const grouped = buildManifest(['firstName', 'dob', 'gender', 'zipCode'], { ...meta, rowCount: 60, uniquenessPct: 40 });
+  if (JSON.stringify(rowsFromManifest(fromFile(grouped))) !== JSON.stringify(generateRows({ columnIds: ['firstName', 'dob', 'gender', 'zipCode'], rowCount: 60, sparsity: 20, seed: 1, locale: 'en_IN', uniqueness: 40 }))) throw new Error('FAIL: rowsFromManifest (uniqueness)');
   let refused = false;
   try { rowsFromManifest({ ...m, generatorVersion: GENERATOR_VERSION + 1 }); } catch { refused = true; }
   if (!refused) throw new Error('FAIL: a manifest from another generator version must be refused');

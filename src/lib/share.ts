@@ -20,6 +20,7 @@ export interface ShareState {
   h?: HeaderMode;     // header mode (optional; absent = descriptive)
   d?: number;         // density % (optional; absent = 100)
   fm?: Formatting;    // formatting (optional; absent = canonical)
+  u?: number;         // quasi-identifier uniqueness % (optional; absent = 100)
 }
 
 // UTF-8 bytes through btoa/atob, which only take Latin-1: an imported preset can be named anything.

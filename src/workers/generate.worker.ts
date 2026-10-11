@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed } from '../lib/seed';
-import { makeRow, generateChunkText, HeaderMode, RowOptions, StreamFormat } from '../lib/generate';
+import { makeRow, newRowState, generateChunkText, HeaderMode, RowOptions, StreamFormat } from '../lib/generate';
 import { generateDocs, TextOptions } from '../lib/text';
 import { rowsFromManifest, Manifest } from '../lib/manifest';
 
@@ -59,10 +59,11 @@ ctx_self.onmessage = async (e: MessageEvent<In>) => {
     const cols = AVAILABLE_COLUMNS.filter(c => msg.columnIds.includes(c.id));
     const CHUNK = msg.rowCount > 10_000 ? 2_000 : 500;
     const out = new Array(msg.rowCount);
+    const state = newRowState();
     for (let off = 0; off < msg.rowCount; off += CHUNK) {
       if (cancelled) { post({ type: 'cancelled' }); return; }
       const end = Math.min(off + CHUNK, msg.rowCount);
-      for (let i = off; i < end; i++) out[i] = makeRow(cols, msg);
+      for (let i = off; i < end; i++) out[i] = makeRow(cols, msg, state);
       post({ type: 'progress', done: end, total: msg.rowCount });
       await yieldForMessages();
     }

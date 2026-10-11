@@ -51,6 +51,7 @@ interface GenBody {
   density?: number;           // % of rows where a should-fire column holds the real value (1–100)
   headers?: HeaderMode;       // descriptive | neutral | misleading (CSV and flat JSON/NDJSON)
   formatting?: Formatting;    // canonical | mixed | evasive: how identifiers are written
+  uniqueness?: number;        // % of rows with their own quasi-identifiers (1–100)
   structure?: JsonStructure;  // JSON/NDJSON nesting: flat | grouped | semantic | deep
   nestingDepth?: number;      // depth for 'deep'
 }
@@ -76,11 +77,13 @@ function resolveGenerate(body: GenBody): { error: string } | { columnIds: string
   if (!Number.isFinite(density) || density < 1 || density > 100) return { error: 'density must be 1–100' };
   if (body.headers != null && !HEADER_MODES.includes(body.headers)) return { error: `headers must be one of: ${HEADER_MODES.join(', ')}` };
   if (body.formatting != null && !FORMATTINGS.includes(body.formatting)) return { error: `formatting must be one of: ${FORMATTINGS.join(', ')}` };
+  const uniqueness = Number(body.uniqueness ?? 100);
+  if (!Number.isFinite(uniqueness) || uniqueness < 1 || uniqueness > 100) return { error: 'uniqueness must be 1–100' };
 
   // Region-focused presets carry a locale, same as the UI. An explicit `locale` still wins.
   const locale = body.locale ?? (body.preset ? PRESET_LOCALES[body.preset] : undefined);
 
-  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale, density, formatting: body.formatting });
+  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale, density, formatting: body.formatting, uniqueness });
   return { columnIds, rows };
 }
 
