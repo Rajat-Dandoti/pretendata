@@ -10,6 +10,7 @@ import { frameworksFor } from '../src/lib/frameworks';
 import { generateRows, rowsToCSV, rekeyRows, HEADER_MODES, HeaderMode } from '../src/lib/generate';
 import { nestRows, JsonStructure } from '../src/lib/nesting';
 import type { LocaleId } from '../src/lib/locale';
+import { FORMATTINGS, Formatting } from '../src/lib/variants';
 
 // Load .env if present — Node built-in, no dotenv dep.
 try { process.loadEnvFile(); } catch { /* no .env, or Node < 20.12 */ }
@@ -48,6 +49,7 @@ interface GenBody {
   format?: 'json' | 'csv' | 'ndjson';
   density?: number;           // % of rows where a should-fire column holds the real value (1–100)
   headers?: HeaderMode;       // descriptive | neutral | misleading (CSV and flat JSON/NDJSON)
+  formatting?: Formatting;    // canonical | mixed | evasive: how identifiers are written
   structure?: JsonStructure;  // JSON/NDJSON nesting: flat | grouped | semantic | deep
   nestingDepth?: number;      // depth for 'deep'
 }
@@ -72,11 +74,12 @@ function resolveGenerate(body: GenBody): { error: string } | { columnIds: string
   const density = Number(body.density ?? 100);
   if (!Number.isFinite(density) || density < 1 || density > 100) return { error: 'density must be 1–100' };
   if (body.headers != null && !HEADER_MODES.includes(body.headers)) return { error: `headers must be one of: ${HEADER_MODES.join(', ')}` };
+  if (body.formatting != null && !FORMATTINGS.includes(body.formatting)) return { error: `formatting must be one of: ${FORMATTINGS.join(', ')}` };
 
   // Region-focused presets carry a locale, same as the UI. An explicit `locale` still wins.
   const locale = body.locale ?? (body.preset ? PRESET_LOCALES[body.preset] : undefined);
 
-  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale, density });
+  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale, density, formatting: body.formatting });
   return { columnIds, rows };
 }
 

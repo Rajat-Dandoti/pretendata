@@ -1,4 +1,5 @@
 import type { LocaleId } from './locale';
+import type { Formatting } from './variants';
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { csvEscape, generateChunkText, headersFor, HeaderMode, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
 import { applySeed } from './seed';
@@ -13,6 +14,7 @@ export interface StreamOptions {
   format: StreamFormat;
   locale?: LocaleId;
   density?: number;
+  formatting?: Formatting;
   headers?: HeaderMode;
   onProgress?: (written: number, total: number) => void;
   signal?: AbortSignal;
@@ -25,6 +27,7 @@ export interface MemoryOptions {
   seed: number | null;
   locale?: LocaleId;
   density?: number;
+  formatting?: Formatting;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -65,6 +68,7 @@ export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
       seed: opts.seed,
       locale: opts.locale,
       density: opts.density,
+      formatting: opts.formatting,
     });
   }).finally(() => { detach(); worker.terminate(); });
 }
@@ -218,6 +222,7 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
           format: opts.format,
           locale: opts.locale,
           density: opts.density,
+          formatting: opts.formatting,
           headers: opts.headers,
         });
       }

@@ -290,6 +290,23 @@ pipeline — CSV escaping, encodings, parsers — and that a detector neither cr
 
 ---
 
+## Formatting variants
+
+The *Identifier formatting* setting rewrites valid values without changing what they are, for the
+columns that have a validator: `ssn`, `aadhaar`, `creditCard`, `iban`, `npi`, `nhsNumber`, `gstin`,
+`vin`, `imei`, `iqama`, `dea`, `routingNumber`. The expectation stays "should fire".
+
+| Level | Forms, drawn per row |
+|---|---|
+| Canonical | The one form documented above |
+| Mixed | As is · regrouped with spaces · regrouped with dashes · bare · labelled (`SSN: …`, `Card=…`) |
+| Evasive | The mixed forms half the time; otherwise full-width digits (`８３１-…`), a zero-width space every three characters, dots as separators, or base64 |
+
+`canonicalForms()` in `src/lib/variants.ts` undoes every form, and `npm test` checks that each written
+value still stands for a valid identifier.
+
+---
+
 ## Presets
 
 Named column bundles in `PRESETS` (schema.ts). Two families:

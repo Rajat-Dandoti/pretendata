@@ -42,9 +42,11 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   locale support, shareable config links, and large-dataset streaming (up to 100M rows) to a single
   file in any browser.
 - Responsive layout — off-canvas sidebars on mobile, collapsible panels on desktop.
-- **Harder tests from two settings** — *Headers*: descriptive, neutral (`col_01` …) or misleading (real
+- **Harder tests from three settings** — *Headers*: descriptive, neutral (`col_01` …) or misleading (real
   names on the wrong columns), to see whether a tool reads values or trusts column names.
   *Identifier density*: real identifiers in only 50% down to 1% of rows, to test scanners that sample.
+  *Identifier formatting*: the same valid values written with spaces, dashes or labels (mixed), or with
+  full-width digits, invisible characters, dots and base64 (evasive).
 - Export to **CSV / JSON / NDJSON**. CSV files start with a UTF-8 BOM so Excel reads non-ASCII names
   correctly.
 - Remembers your last settings in the browser; a share link always wins over them.
@@ -120,10 +122,11 @@ SPA from `dist/`.
 
 - `GET /api/columns` — column catalog (id, name, category, region, validation, expectation, framework tags) + colors.
 - `GET /api/presets` — named column bundles.
-- `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, density?, headers?, format?, structure?, nestingDepth? }`.
+- `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, density?, headers?, formatting?, format?, structure?, nestingDepth? }`.
   `format` ∈ `json` (default) · `csv` · `ndjson`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`;
   `rowCount` is an integer up to 100,000; `nestingDepth` is clamped to 1–10; `density` is 1–100;
-  `headers` ∈ `descriptive` · `neutral` · `misleading` (CSV and flat JSON/NDJSON).
+  `headers` ∈ `descriptive` · `neutral` · `misleading` (CSV and flat JSON/NDJSON);
+  `formatting` ∈ `canonical` · `mixed` · `evasive`.
 
 ```bash
 curl -X POST localhost:8787/api/generate -H 'content-type: application/json' \

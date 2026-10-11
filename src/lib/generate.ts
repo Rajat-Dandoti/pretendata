@@ -3,7 +3,8 @@
 import { AVAILABLE_COLUMNS, ColumnDef, expectationFor } from '../data/schema';
 import { applySeed, SEED_REF_DATE } from './seed';
 import { getFaker, resolveLocale, sexLabel, LocaleId } from './locale';
-import { luhnValid, vinValid } from './validators';
+import { luhnValid, vinValid, VALIDATORS } from './validators';
+import { applyVariant, validUnderVariants, Formatting, VARIANT_IDS } from './variants';
 
 /**
  * Version of the seed contract: for a given (seed, settings), which bytes come out.
@@ -59,12 +60,23 @@ export function rekeyRows(rows: Record<string, any>[], cols: ColumnDef[], mode: 
 // Columns a detector should fire on: the only ones density thins out.
 const DETECT_IDS = new Set(AVAILABLE_COLUMNS.filter(c => expectationFor(c) === 'detect').map(c => c.id));
 
-/**
- * Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx.
- * `density` (1–100) is the share of rows in which a should-fire column holds the real value;
- * the rest get harmless filler, to test scanners that sample rows instead of reading them all.
- */
-export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId, density = 100): Record<string, any> {
+/** Settings that shape the values in a row. All optional; the defaults are the plain dataset. */
+export interface RowOptions {
+  /** % of cells set to null. */
+  sparsity?: number;
+  locale?: LocaleId;
+  /**
+   * Share of rows (1–100) in which a should-fire column holds the real value; the rest get
+   * harmless filler, to test scanners that sample rows instead of reading them all.
+   */
+  density?: number;
+  /** How identifiers are written: one canonical form, everyday variants, or evasive ones. */
+  formatting?: Formatting;
+}
+
+/** Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx. */
+export function makeRow(cols: ColumnDef[], o: RowOptions = {}): Record<string, any> {
+  const { sparsity = 0, locale = 'en', density = 100, formatting = 'canonical' } = o;
   // 'mix' is resolved once per row so the phone number matches the row's name/address.
   const rowLocale = resolveLocale(locale);
   const f = getFaker(rowLocale);
@@ -90,7 +102,7 @@ export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId, d
   for (const col of cols) {
     row[col.id] = sparsity > 0 && Math.random() < sparsity / 100 ? null
       : density < 100 && DETECT_IDS.has(col.id) && Math.random() >= density / 100 ? f.commerce.productName()
-      : col.generate(fctx);
+      : applyVariant(col.id, col.generate(fctx), formatting);
   }
   return row;
 }
@@ -107,14 +119,11 @@ export function chunkSeed(seed: number, chunk: number): number {
   return (Math.imul(seed, 0x9E3779B1) + chunk) >>> 0;
 }
 
-export interface ChunkOptions {
+export interface ChunkOptions extends RowOptions {
   seed: number | null;
   chunk: number;
   rows: number;
-  sparsity: number;
-  locale: LocaleId;
   format: 'csv' | 'ndjson';
-  density?: number;
   headers?: HeaderMode;
 }
 
@@ -122,7 +131,7 @@ export interface ChunkOptions {
 export function generateChunkRows(cols: ColumnDef[], o: Omit<ChunkOptions, 'format' | 'headers'>): Record<string, any>[] {
   if (o.seed !== null) applySeed(chunkSeed(o.seed, o.chunk));
   const out = new Array(o.rows);
-  for (let i = 0; i < o.rows; i++) out[i] = makeRow(cols, o.sparsity, o.locale, o.density);
+  for (let i = 0; i < o.rows; i++) out[i] = makeRow(cols, o);
   return out;
 }
 
@@ -135,23 +144,18 @@ export function generateChunkText(cols: ColumnDef[], o: ChunkOptions): string {
   return buf;
 }
 
-export interface GenerateOptions {
+export interface GenerateOptions extends RowOptions {
   columnIds: string[];
   rowCount: number;
-  sparsity?: number;
   seed?: number | null;
-  locale?: LocaleId;
-  density?: number;
 }
 
 /** Whole-array generation (in-memory). Applies the seed, then builds rowCount rows. */
 export function generateRows(opts: GenerateOptions): Record<string, any>[] {
   applySeed(opts.seed ?? null);
   const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
-  const sparsity = opts.sparsity ?? 0;
-  const locale = opts.locale ?? 'en';
   const out = new Array(opts.rowCount);
-  for (let i = 0; i < opts.rowCount; i++) out[i] = makeRow(cols, sparsity, locale, opts.density);
+  for (let i = 0; i < opts.rowCount; i++) out[i] = makeRow(cols, opts);
   return out;
 }
 
@@ -231,6 +235,20 @@ export function _selfCheck() {
   if (share < 0.22 || share > 0.28) throw new Error(`FAIL: density 25% gave ${(share * 100).toFixed(1)}% real SSNs`);
   if (thin.some(r => typeof r.ssn !== 'string' || r.ssn === '')) throw new Error('FAIL: density filler must be a non-empty string');
   if (thin.some(r => Number.isNaN(Date.parse(r.createdAt)) || !/^\d{12}$/.test(r.aadhaar_invalid))) throw new Error('FAIL: density must leave other columns alone');
+  // formatting: every written form still stands for a valid identifier, and the forms really vary
+  const variantIds = [...VARIANT_IDS];
+  for (const formatting of ['mixed', 'evasive'] as const) {
+    const written = generateRows({ columnIds: variantIds, rowCount: 1200, seed: 17, formatting });
+    for (const id of variantIds) {
+      const bad = written.find(r => !validUnderVariants(id, r[id]));
+      if (bad) throw new Error(`FAIL: ${formatting} form of ${id} no longer stands for a valid value: ${JSON.stringify(bad[id])}`);
+      const canonical = written.filter(r => VALIDATORS[id](r[id])).length;
+      if (canonical === written.length) throw new Error(`FAIL: ${formatting} formatting left every ${id} canonical`);
+    }
+    const hasEvasive = written.some(r => /[\uFF10-\uFF19\u200B]/.test(r.ssn));
+    if (hasEvasive !== (formatting === 'evasive')) throw new Error(`FAIL: ${formatting} formatting and evasive forms`);
+  }
+  if (generateRows({ columnIds: ['email', 'aadhaar_invalid'], rowCount: 50, seed: 17, formatting: 'evasive' }).some(r => !r.email.includes('@') || !/^\d{12}$/.test(r.aadhaar_invalid))) throw new Error('FAIL: formatting must leave other columns alone');
   // checksum columns hold their contract; near-miss columns never accidentally pass.
   for (const r of generateRows({ columnIds: ['creditCard', 'creditCard_invalid', 'vin', 'vin_invalid'], rowCount: 2000, seed: 5 })) {
     if (!luhnValid(r.creditCard) || luhnValid(r.creditCard_invalid)) throw new Error(`FAIL: credit card Luhn: ${r.creditCard} / ${r.creditCard_invalid}`);

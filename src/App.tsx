@@ -12,6 +12,7 @@ import { encode as encodeShare, decode as decodeShare, SHARE_VERSION, ShareState
 import { LOCALES, LocaleId } from './lib/locale';
 import { makeRow, headersFor, HeaderMode, HEADER_MODES } from './lib/generate';
 import { applySeed } from './lib/seed';
+import { Formatting, FORMATTINGS } from './lib/variants';
 import ColumnReference from './components/ColumnReference';
 import Scorecard from './components/Scorecard';
 
@@ -86,6 +87,7 @@ function loadInitialConfig() {
     locale: (LOCALES.some(l => l.id === s?.l) ? s!.l! : 'en') as LocaleId,
     headerMode: (HEADER_MODES.includes(s?.h as HeaderMode) ? s!.h! : 'descriptive') as HeaderMode,
     density: DENSITIES.includes(Number(s?.d)) ? Number(s!.d) : 100,
+    formatting: (FORMATTINGS.includes(s?.fm as Formatting) ? s!.fm! : 'canonical') as Formatting,
   };
 }
 
@@ -104,6 +106,7 @@ export default function App() {
   const [locale, setLocale] = useState<LocaleId>(initial.locale);
   const [headerMode, setHeaderMode] = useState<HeaderMode>(initial.headerMode);
   const [density, setDensity] = useState<number>(initial.density);
+  const [formatting, setFormatting] = useState<Formatting>(initial.formatting);
   const [streamProgress, setStreamProgress] = useState<{ written: number; total: number } | null>(null);
   const [seedStr, setSeedStr] = useState<string>(initial.seedStr);
   const [columnSearch, setColumnSearch] = useState<string>('');
@@ -168,7 +171,8 @@ export default function App() {
     // Left out at their defaults, so links made before these settings existed stay identical.
     ...(headerMode !== 'descriptive' && { h: headerMode }),
     ...(density !== 100 && { d: density }),
-  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, streamFormat, locale, headerMode, density]);
+    ...(formatting !== 'canonical' && { fm: formatting }),
+  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, streamFormat, locale, headerMode, density, formatting]);
 
   // Remember it for the next visit.
   useEffect(() => {
@@ -202,6 +206,7 @@ export default function App() {
     seeding: rows > IN_MEMORY_THRESHOLD ? 'chunked' : 'whole',
     densityPct: density,
     headerMode,
+    formatting,
   });
 
   // Group columns by category
@@ -249,8 +254,8 @@ export default function App() {
     // ponytail: reuse makeRow — the preview was a copy of it that drifted (it never
     // seeded Math.random, so checksum columns ignored the seed).
     applySeed(seedNum);
-    return Array.from({ length: 5 }, () => makeRow(cols, sparsity, locale, density));
-  }, [selectedColumns, locale, sparsity, seedNum, density]);
+    return Array.from({ length: 5 }, () => makeRow(cols, { sparsity, locale, density, formatting }));
+  }, [selectedColumns, locale, sparsity, seedNum, density, formatting]);
 
   // ponytail: crude est ≈ cols × 22 B/cell for CSV; time ≈ 3µs/row + 1.5µs/cell per core
   // (measured on an M-series laptop), split across the worker pool when streaming.
@@ -314,6 +319,7 @@ export default function App() {
           format: streamFormat,
           locale,
           density,
+          formatting,
           headers: headerMode,
           signal: ac.signal,
           onProgress: (written, total) => setStreamProgress({ written, total }),
@@ -345,6 +351,7 @@ export default function App() {
         seed: seedNum,
         locale,
         density,
+        formatting,
         signal: ac.signal,
         onProgress: (done, total) => setStreamProgress({ written: done, total }),
       });
@@ -576,6 +583,23 @@ export default function App() {
                   value={String(density)}
                   onChange={(v) => { setDensity(Number(v)); setGeneratedData([]); /* different values — fall back to the live preview */ }}
                   options={DENSITIES.map(d => ({ value: String(d), label: d === 100 ? 'Every row' : `${d}% of rows` }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <span className={cn(T.body, 'font-medium flex items-center gap-1.5')}>
+                  Identifier formatting
+                  <Tip text="How identifiers with a checksum are written. Mixed varies each row between spaced, dashed, bare and labelled forms (SSN: 078-05-1120). Evasive adds forms that defeat naive matching: full-width digits, invisible characters between digits, dots, base64. The value underneath is always valid, so it should still be detected.">
+                    <Info size={ICON.micro} className="text-slate-400" />
+                  </Tip>
+                </span>
+                <Dropdown<Formatting>
+                  value={formatting}
+                  onChange={(v) => { setFormatting(v); setGeneratedData([]); /* different values — fall back to the live preview */ }}
+                  options={[
+                    { value: 'canonical', label: 'Canonical (one form)' },
+                    { value: 'mixed', label: 'Mixed (spaces, dashes, labels)' },
+                    { value: 'evasive', label: 'Evasive (+ full-width, hidden, base64)' },
+                  ]}
                 />
               </div>
               <div className="space-y-2">

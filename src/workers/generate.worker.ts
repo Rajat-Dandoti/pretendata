@@ -1,12 +1,11 @@
 /// <reference lib="webworker" />
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed } from '../lib/seed';
-import { LocaleId } from '../lib/locale';
-import { makeRow, generateChunkText, HeaderMode } from '../lib/generate';
+import { makeRow, generateChunkText, HeaderMode, RowOptions } from '../lib/generate';
 
 type In =
-  | { type: 'memory'; columnIds: string[]; rowCount: number; sparsity: number; seed: number | null; locale?: LocaleId; density?: number }
-  | { type: 'init'; columnIds: string[]; sparsity: number; seed: number | null; format: 'csv' | 'ndjson'; locale?: LocaleId; density?: number; headers?: HeaderMode }
+  | ({ type: 'memory'; columnIds: string[]; rowCount: number; seed: number | null } & RowOptions)
+  | ({ type: 'init'; columnIds: string[]; seed: number | null; format: 'csv' | 'ndjson'; headers?: HeaderMode } & RowOptions)
   | { type: 'job'; chunk: number; rows: number }
   | { type: 'cancel' };
 
@@ -22,7 +21,7 @@ const encoder = new TextEncoder();
 let cancelled = false;
 // Stream mode: one worker of a pool. `init` fixes the run's settings, then each `job`
 // produces one independently-seeded chunk; the main thread owns ordering and pacing.
-let stream: { cols: ColumnDef[]; sparsity: number; seed: number | null; format: 'csv' | 'ndjson'; locale: LocaleId; density?: number; headers?: HeaderMode } | null = null;
+let stream: ({ cols: ColumnDef[]; seed: number | null; format: 'csv' | 'ndjson'; headers?: HeaderMode } & RowOptions) | null = null;
 
 ctx_self.onmessage = async (e: MessageEvent<In>) => {
   const msg = e.data;
@@ -30,11 +29,8 @@ ctx_self.onmessage = async (e: MessageEvent<In>) => {
   try {
     if (msg.type === 'init') {
       if (msg.seed === null) applySeed(null);
-      stream = {
-        cols: AVAILABLE_COLUMNS.filter(c => msg.columnIds.includes(c.id)),
-        sparsity: msg.sparsity, seed: msg.seed, format: msg.format, locale: msg.locale ?? 'en',
-        density: msg.density, headers: msg.headers,
-      };
+      const { type: _type, columnIds, ...settings } = msg;
+      stream = { cols: AVAILABLE_COLUMNS.filter(c => columnIds.includes(c.id)), ...settings };
       return;
     }
     if (msg.type === 'job') {
@@ -53,7 +49,7 @@ ctx_self.onmessage = async (e: MessageEvent<In>) => {
     for (let off = 0; off < msg.rowCount; off += CHUNK) {
       if (cancelled) { post({ type: 'cancelled' }); return; }
       const end = Math.min(off + CHUNK, msg.rowCount);
-      for (let i = off; i < end; i++) out[i] = makeRow(cols, msg.sparsity, msg.locale ?? 'en', msg.density);
+      for (let i = off; i < end; i++) out[i] = makeRow(cols, msg);
       post({ type: 'progress', done: end, total: msg.rowCount });
       await yieldForMessages();
     }

@@ -1,0 +1,10 @@
+import { readFileSync } from 'node:fs';
+const REPO = import.meta.dirname + '/..', H = import.meta.dirname + '/.out';
+const { rowsFromManifest } = await import(`${REPO}/src/lib/manifest.ts`);
+const { validUnderVariants } = await import(`${REPO}/src/lib/variants.ts`);
+const key = JSON.parse(readFileSync(`${H}/fm-key.json`, 'utf8')), data = JSON.parse(readFileSync(`${H}/fm-data.json`, 'utf8'));
+const same = JSON.stringify(rowsFromManifest(key)) === JSON.stringify(data);
+console.log(`${same ? '  ok  ' : '  FAIL'} 500 evasively formatted rows rebuilt in Node from the key match the browser's export`);
+const valid = data.every((r: any) => validUnderVariants('ssn', r.ssn));
+console.log(`${valid ? '  ok  ' : '  FAIL'} every written SSN still stands for a valid SSN`);
+process.exit(same && valid ? 0 : 1);

@@ -5,6 +5,7 @@
 import type { StreamFormat } from './streaming';
 import type { LocaleId } from './locale';
 import type { HeaderMode } from './generate';
+import type { Formatting } from './variants';
 
 export const SHARE_VERSION = 1;
 
@@ -19,6 +20,7 @@ export interface ShareState {
   l?: LocaleId;       // locale (added v1.1, optional for backward-compat)
   h?: HeaderMode;     // header mode (optional; absent = descriptive)
   d?: number;         // density % (optional; absent = 100)
+  fm?: Formatting;    // formatting (optional; absent = canonical)
 }
 
 // UTF-8 bytes through btoa/atob, which only take Latin-1: an imported preset can be named anything.

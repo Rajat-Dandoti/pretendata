@@ -94,7 +94,7 @@ export function describeValidation(kind: ValidationKind | undefined): { label: s
 
 /** One illustrative value per column (id → sample). Reroll by calling again. */
 export function sampleValues(locale: LocaleId): Record<string, any> {
-  return makeRow(AVAILABLE_COLUMNS, 0, locale);
+  return makeRow(AVAILABLE_COLUMNS, { locale });
 }
 
 // ---------- self-check (run via `npm test`) ----------
