@@ -3,6 +3,7 @@
 // runs one scenario from smoke/scenarios/ against it, and fails on any console error, native
 // dialog or request that leaves the origin.
 // usage: node smoke/harness.mjs <scenario>      (run `npm run smoke` for all of them)
+//        SMOKE_BASE=https://your.site node smoke/harness.mjs baseline      (check a deployed site)
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, mkdirSync, rmSync, readdirSync, writeFileSync } from 'node:fs';
@@ -36,7 +37,8 @@ const server = createServer((req, res) => {
   res.end(readFileSync(file));
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
-const base = `http://127.0.0.1:${server.address().port}`;
+// SMOKE_BASE=https://example.com runs a scenario against a deployed site instead of the local build.
+const base = (process.env.SMOKE_BASE ?? `http://127.0.0.1:${server.address().port}`).replace(/\/$/, '');
 
 // ---- chrome ----
 mkdirSync(OUT, { recursive: true });
