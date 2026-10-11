@@ -26,5 +26,9 @@ export default async (page, check) => {
   const json = JSON.parse(readFileSync(jsonFile.path, 'utf8'));
   check(Array.isArray(json) && json.length === 100 && /^[2-9]\d{11}$/.test(json[0].aadhaar), 'JSON export: 100 rows with Aadhaar');
 
+  const sqlFile = await page.download(() => page.click('button[aria-label="Export SQL"]'));
+  const sql = readFileSync(sqlFile.path, 'utf8');
+  check(sqlFile.name === 'pretendata.sql' && sql.startsWith('CREATE TABLE pretendata (\n  first_name TEXT,') && (sql.match(/^  \(/gm) ?? []).length === 100, 'SQL export: table definition and 100 rows');
+
   await page.screenshot('baseline.png');
 };

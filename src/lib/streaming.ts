@@ -1,10 +1,10 @@
 import type { LocaleId } from './locale';
 import type { Formatting } from './variants';
 import { AVAILABLE_COLUMNS } from '../data/schema';
-import { csvEscape, generateChunkText, headersFor, HeaderMode, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
+import { csvEscape, generateChunkText, headersFor, HeaderMode, sqlCreateTable, StreamFormat, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
 import { applySeed } from './seed';
 
-export type StreamFormat = 'csv' | 'ndjson';
+export type { StreamFormat };
 
 export interface StreamOptions {
   columnIds: string[];
@@ -95,11 +95,11 @@ async function openSink(suggestedName: string, format: StreamFormat): Promise<Si
   if (isStreamingSupported()) {
     const fileHandle = await (window as any).showSaveFilePicker({
       suggestedName,
-      types: [
-        format === 'csv'
-          ? { description: 'CSV', accept: { 'text/csv': ['.csv'] } }
-          : { description: 'NDJSON', accept: { 'application/x-ndjson': ['.ndjson', '.jsonl'] } },
-      ],
+      types: [{
+        csv: { description: 'CSV', accept: { 'text/csv': ['.csv'] } },
+        ndjson: { description: 'NDJSON', accept: { 'application/x-ndjson': ['.ndjson', '.jsonl'] } },
+        sql: { description: 'SQL', accept: { 'application/sql': ['.sql'] } },
+      }[format]],
     });
     let writable = await fileHandle.createWritable();
     let size = 0;
@@ -159,10 +159,11 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
   let stopped = false;
 
   try {
-    if (opts.format === 'csv') {
-      const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
-      await sink.write(new TextEncoder().encode(UTF8_BOM + headersFor(cols, opts.headers).map(csvEscape).join(',') + '\n'));
-    }
+    const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
+    const head = opts.format === 'csv' ? UTF8_BOM + headersFor(cols, opts.headers).map(csvEscape).join(',') + '\n'
+      : opts.format === 'sql' ? sqlCreateTable(cols, opts.headers)
+      : '';
+    if (head) await sink.write(new TextEncoder().encode(head));
     await new Promise<void>((resolve, reject) => {
       const ready = new Map<number, Uint8Array>(); // finished chunks waiting for their turn
       const idle = [...workers];

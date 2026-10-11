@@ -1,7 +1,7 @@
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { buildManifest, RunMeta } from './manifest';
 import { nestRows, JsonStructure, DEFAULT_DEPTH } from './nesting';
-import { HeaderMode, rekeyRows, rowsToCSV, UTF8_BOM } from './generate';
+import { HeaderMode, rekeyRows, rowsToCSV, rowsToSQL, UTF8_BOM } from './generate';
 
 /**
  * Centralized export utilities — extracted from App.tsx to keep the main component clean.
@@ -33,6 +33,12 @@ export function exportCSV(data: any[], selectedColumns: Set<string>, headers: He
   const activeCols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
   // Same bytes as the streamed CSV: BOM, header, one line per row, trailing newline.
   downloadBlob(new Blob([UTF8_BOM + rowsToCSV(data, activeCols, headers)], { type: 'text/csv;charset=utf-8' }), 'pretendata.csv');
+}
+
+export function exportSQL(data: any[], selectedColumns: Set<string>, headers: HeaderMode = 'descriptive') {
+  if (data.length === 0) return;
+  const activeCols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
+  downloadBlob(new Blob([rowsToSQL(data, activeCols, headers)], { type: 'application/sql' }), 'pretendata.sql');
 }
 
 /** Header modes apply to flat JSON only: the nested structures are named after what they hold. */

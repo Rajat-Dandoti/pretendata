@@ -99,7 +99,8 @@ export interface FieldMap {
   score: string | null;
 }
 
-const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+// Letters and digits only: "First Name", "first_name" (a SQL column) and "firstName" are one name.
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 const isNumber = (s: string) => s !== '' && Number.isFinite(Number(s));
 
 function columnIndex(key: KeyColumn[]): Map<string, KeyColumn> {
@@ -340,6 +341,16 @@ export function _selfCheck() {
   ];
   const led = score(parseResults(JSON.stringify([{ col: 'Email Address', kind: 'NONE' }, { col: 'SSN', kind: 'PII' }])), { name: 'col', label: 'kind', score: null }, { PII: 'detected', NONE: 'none' }, swapped);
   if (led.columns.find(c => c.id === 'ssn')!.verdict !== 'missed' || led.columns.find(c => c.id === 'email')!.verdict !== 'correct') throw new Error('FAIL: scoring under misleading headers');
+
+  // forgiving name matching must not make two columns indistinguishable
+  const seen = new Map<string, string>();
+  for (const c of key) for (const n of [c.name, c.id]) {
+    const other = seen.get(norm(n));
+    if (other && other !== c.id) throw new Error(`FAIL: "${n}" (${c.id}) and ${other} normalise to the same name`);
+    seen.set(norm(n), c.id);
+  }
+  const sqlNamed = score(parseResults(JSON.stringify([{ col: 'first_name', kind: 'PII' }, { col: 'drivers license (in)', kind: 'PII' }])), { name: 'col', label: 'kind', score: null }, { PII: 'detected' }, key);
+  if (sqlNamed.columns.map(c => c.id).join() !== 'firstName,dlIndia') throw new Error('FAIL: matching SQL-style and loosely written names');
 
   for (const bad of ['', '{"a":1}', 'just,a,header']) {
     let threw = false;

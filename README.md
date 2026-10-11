@@ -47,8 +47,10 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   *Identifier density*: real identifiers in only 50% down to 1% of rows, to test scanners that sample.
   *Identifier formatting*: the same valid values written with spaces, dashes or labels (mixed), or with
   full-width digits, invisible characters, dots and base64 (evasive).
-- Export to **CSV / JSON / NDJSON**. CSV files start with a UTF-8 BOM so Excel reads non-ASCII names
-  correctly.
+- Export to **CSV / JSON / NDJSON / SQL**. CSV files start with a UTF-8 BOM so Excel reads non-ASCII
+  names correctly. The SQL dump is a `CREATE TABLE` plus batched `INSERT`s with unquoted snake_case
+  column names, and loads as is into SQLite and PostgreSQL (MySQL needs `NO_BACKSLASH_ESCAPES` if a
+  value holds a backslash).
 - Remembers your last settings in the browser; a share link always wins over them.
 
 ## Quick start
@@ -69,7 +71,7 @@ the same thing in headless Chrome.
 
 ## Large datasets (>100k rows)
 
-Above 100k rows the app skips the in-memory preview and streams straight to one CSV/NDJSON file:
+Above 100k rows the app skips the in-memory preview and streams straight to one CSV, NDJSON or SQL file:
 
 - **Parallel generation** — a pool of Web Workers (up to 8, one core left free) generates chunks that
   are written in order. Speed depends mostly on how many columns are selected.
@@ -123,7 +125,7 @@ SPA from `dist/`.
 - `GET /api/columns` — column catalog (id, name, category, region, validation, expectation, framework tags) + colors.
 - `GET /api/presets` — named column bundles.
 - `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, density?, headers?, formatting?, format?, structure?, nestingDepth? }`.
-  `format` ∈ `json` (default) · `csv` · `ndjson`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`;
+  `format` ∈ `json` (default) · `csv` · `ndjson` · `sql`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`;
   `rowCount` is an integer up to 100,000; `nestingDepth` is clamped to 1–10; `density` is 1–100;
   `headers` ∈ `descriptive` · `neutral` · `misleading` (CSV and flat JSON/NDJSON);
   `formatting` ∈ `canonical` · `mixed` · `evasive`.

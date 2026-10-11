@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PRESETS, PRESET_LOCALES, expectationFor } from '../src/data/schema';
 import { frameworksFor } from '../src/lib/frameworks';
-import { generateRows, rowsToCSV, rekeyRows, HEADER_MODES, HeaderMode } from '../src/lib/generate';
+import { generateRows, rowsToCSV, rowsToSQL, rekeyRows, HEADER_MODES, HeaderMode } from '../src/lib/generate';
 import { nestRows, JsonStructure } from '../src/lib/nesting';
 import type { LocaleId } from '../src/lib/locale';
 import { FORMATTINGS, Formatting } from '../src/lib/variants';
@@ -46,7 +46,7 @@ interface GenBody {
   sparsity?: number;
   seed?: number | null;
   locale?: LocaleId;
-  format?: 'json' | 'csv' | 'ndjson';
+  format?: 'json' | 'csv' | 'ndjson' | 'sql';
   density?: number;           // % of rows where a should-fire column holds the real value (1–100)
   headers?: HeaderMode;       // descriptive | neutral | misleading (CSV and flat JSON/NDJSON)
   formatting?: Formatting;    // canonical | mixed | evasive: how identifiers are written
@@ -97,6 +97,7 @@ app.post('/api/generate', async (c) => {
   const shaped = () => (structure === 'flat' ? rekeyRows(res.rows, cols, body.headers) : nestRows(res.rows, structure, body.nestingDepth));
   if (format === 'json') return c.json(shaped());
   if (format === 'csv') return c.body(rowsToCSV(res.rows, cols, body.headers), 200, { 'content-type': 'text/csv; charset=utf-8' });
+  if (format === 'sql') return c.body(rowsToSQL(res.rows, cols, body.headers), 200, { 'content-type': 'application/sql; charset=utf-8' });
   if (format === 'ndjson') {
     const nested = shaped();
     return c.body(nested.map(r => JSON.stringify(r)).join('\n') + (nested.length ? '\n' : ''), 200, { 'content-type': 'application/x-ndjson' });

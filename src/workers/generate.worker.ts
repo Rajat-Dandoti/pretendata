@@ -1,11 +1,11 @@
 /// <reference lib="webworker" />
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed } from '../lib/seed';
-import { makeRow, generateChunkText, HeaderMode, RowOptions } from '../lib/generate';
+import { makeRow, generateChunkText, HeaderMode, RowOptions, StreamFormat } from '../lib/generate';
 
 type In =
   | ({ type: 'memory'; columnIds: string[]; rowCount: number; seed: number | null } & RowOptions)
-  | ({ type: 'init'; columnIds: string[]; seed: number | null; format: 'csv' | 'ndjson'; headers?: HeaderMode } & RowOptions)
+  | ({ type: 'init'; columnIds: string[]; seed: number | null; format: StreamFormat; headers?: HeaderMode } & RowOptions)
   | { type: 'job'; chunk: number; rows: number }
   | { type: 'cancel' };
 
@@ -21,7 +21,7 @@ const encoder = new TextEncoder();
 let cancelled = false;
 // Stream mode: one worker of a pool. `init` fixes the run's settings, then each `job`
 // produces one independently-seeded chunk; the main thread owns ordering and pacing.
-let stream: ({ cols: ColumnDef[]; seed: number | null; format: 'csv' | 'ndjson'; headers?: HeaderMode } & RowOptions) | null = null;
+let stream: ({ cols: ColumnDef[]; seed: number | null; format: StreamFormat; headers?: HeaderMode } & RowOptions) | null = null;
 
 ctx_self.onmessage = async (e: MessageEvent<In>) => {
   const msg = e.data;

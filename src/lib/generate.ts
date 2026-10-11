@@ -123,7 +123,7 @@ export interface ChunkOptions extends RowOptions {
   seed: number | null;
   chunk: number;
   rows: number;
-  format: 'csv' | 'ndjson';
+  format: StreamFormat;
   headers?: HeaderMode;
 }
 
@@ -135,8 +135,13 @@ export function generateChunkRows(cols: ColumnDef[], o: Omit<ChunkOptions, 'form
   return out;
 }
 
+/** File formats a large run can stream to. */
+export type StreamFormat = 'csv' | 'ndjson' | 'sql';
+export const STREAM_FORMATS: StreamFormat[] = ['csv', 'ndjson', 'sql'];
+
 /** Serialized text of one stream chunk (no header). */
 export function generateChunkText(cols: ColumnDef[], o: ChunkOptions): string {
+  if (o.format === 'sql') return sqlInserts(generateChunkRows(cols, o), cols, o.headers);
   let buf = '';
   for (const r of rekeyRows(generateChunkRows(cols, o), cols, o.format === 'ndjson' ? o.headers : 'descriptive')) {
     buf += (o.format === 'csv' ? cols.map(c => csvEscape(r[c.id])).join(',') : JSON.stringify(r)) + '\n';
@@ -168,6 +173,44 @@ export function rowsToCSV(rows: Record<string, any>[], cols: ColumnDef[], header
 
 export function rowsToNdjson(rows: Record<string, any>[]): string {
   return rows.map(r => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : '');
+}
+
+// ---------- SQL ----------
+export const SQL_TABLE = 'pretendata';
+const SQL_BATCH = 500; // rows per INSERT statement
+
+/** Column names as snake_case of the JSON keys: plain [a-z0-9_], so no dialect needs to quote them. */
+export function sqlColumns(cols: ColumnDef[], headers: HeaderMode = 'descriptive'): string[] {
+  return headersFor(cols, headers, 'id').map(k => k.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase());
+}
+
+/** Standard SQL literal: quotes doubled, nothing else escaped (MySQL needs NO_BACKSLASH_ESCAPES for values holding a backslash). */
+export function sqlLiteral(v: any): string {
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';
+  return `'${String(v).replace(/'/g, "''")}'`;
+}
+
+/** CREATE TABLE for the columns. Types come from what each column actually emits: numbers are NUMERIC, the rest TEXT. */
+export function sqlCreateTable(cols: ColumnDef[], headers: HeaderMode = 'descriptive'): string {
+  const sample = makeRow(cols);
+  const names = sqlColumns(cols, headers);
+  return `CREATE TABLE ${SQL_TABLE} (\n${cols.map((c, i) => `  ${names[i]} ${typeof sample[c.id] === 'number' ? 'NUMERIC' : 'TEXT'}`).join(',\n')}\n);\n`;
+}
+
+/** Batched INSERT statements for the rows; self-contained, so stream chunks can be written back to back. */
+export function sqlInserts(rows: Record<string, any>[], cols: ColumnDef[], headers: HeaderMode = 'descriptive'): string {
+  const into = `INSERT INTO ${SQL_TABLE} (${sqlColumns(cols, headers).join(', ')}) VALUES\n`;
+  let out = '';
+  for (let i = 0; i < rows.length; i += SQL_BATCH) {
+    out += into + rows.slice(i, i + SQL_BATCH).map(r => `  (${cols.map(c => sqlLiteral(r[c.id])).join(', ')})`).join(',\n') + ';\n';
+  }
+  return out;
+}
+
+/** A complete SQL dump: table definition, then the rows. */
+export function rowsToSQL(rows: Record<string, any>[], cols: ColumnDef[], headers: HeaderMode = 'descriptive'): string {
+  return sqlCreateTable(cols, headers) + sqlInserts(rows, cols, headers);
 }
 
 // ---------- self-check (run via `npm test`) ----------

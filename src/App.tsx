@@ -3,14 +3,14 @@ import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, Shiel
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES, Expectation, EXPECTATION_LABELS, expectationFor } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, Tip, TIER_CHIP } from './lib/ui';
-import { exportCSV, exportJSON, exportPresetConfig, downloadAnswerKey } from './lib/exporters';
+import { exportCSV, exportJSON, exportSQL, exportPresetConfig, downloadAnswerKey } from './lib/exporters';
 import { JsonStructure } from './lib/nesting';
 import { RunMeta } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
 import { streamGenerateToFile, StreamFormat, generateInWorker, streamPoolSize } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION, ShareState } from './lib/share';
 import { LOCALES, LocaleId } from './lib/locale';
-import { makeRow, headersFor, HeaderMode, HEADER_MODES } from './lib/generate';
+import { makeRow, headersFor, HeaderMode, HEADER_MODES, STREAM_FORMATS } from './lib/generate';
 import { applySeed } from './lib/seed';
 import { Formatting, FORMATTINGS } from './lib/variants';
 import ColumnReference from './components/ColumnReference';
@@ -83,7 +83,7 @@ function loadInitialConfig() {
     rowCount: Number.isFinite(rows) ? Math.min(MAX_ROWS, Math.max(MIN_ROWS, rows)) : 100,
     seedStr: s ? String(s.s ?? '').replace(/[^\d-]/g, '') : '42',
     sparsity: Number.isFinite(sparsity) ? Math.min(90, Math.max(0, sparsity)) : 0,
-    streamFormat: (s?.f === 'ndjson' ? 'ndjson' : 'csv') as StreamFormat,
+    streamFormat: (STREAM_FORMATS.includes(s?.f as StreamFormat) ? s!.f : 'csv') as StreamFormat,
     locale: (LOCALES.some(l => l.id === s?.l) ? s!.l! : 'en') as LocaleId,
     headerMode: (HEADER_MODES.includes(s?.h as HeaderMode) ? s!.h! : 'descriptive') as HeaderMode,
     density: DENSITIES.includes(Number(s?.d)) ? Number(s!.d) : 100,
@@ -497,16 +497,11 @@ export default function App() {
                   <strong>Large dataset:</strong> Will stream directly to a file. Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
                 </p>
                 <div className="flex gap-1">
-                  <Button
-                    variant={streamFormat === 'csv' ? 'primary' : 'outline'}
-                    onClick={() => setStreamFormat('csv')}
-                    className="flex-1"
-                  >CSV</Button>
-                  <Button
-                    variant={streamFormat === 'ndjson' ? 'primary' : 'outline'}
-                    onClick={() => setStreamFormat('ndjson')}
-                    className="flex-1"
-                  >NDJSON</Button>
+                  {STREAM_FORMATS.map(f => (
+                    <Button key={f} variant={streamFormat === f ? 'primary' : 'outline'} onClick={() => setStreamFormat(f)} className="flex-1">
+                      {f.toUpperCase()}
+                    </Button>
+                  ))}
                 </div>
               </div>
             )}
@@ -956,6 +951,16 @@ export default function App() {
             >
               <FileJson size={ICON.label} />
               <span className="hidden lg:inline">JSON</span>
+            </Button>
+            <Button
+              size="md"
+              onClick={() => exportSQL(generatedData, selectedColumns, headerMode)}
+              disabled={generatedData.length === 0}
+              title="Export a SQL dump: CREATE TABLE plus INSERT statements"
+              aria-label="Export SQL"
+            >
+              <Database size={ICON.label} />
+              <span className="hidden lg:inline">SQL</span>
             </Button>
           </div>
         </header>
