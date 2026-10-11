@@ -135,6 +135,30 @@ Pages/Workers and Netlify do this automatically for a Vite SPA; GitHub Pages nee
 export fallback in browsers without the File System Access API — make sure your host serves these as
 static files at the site root.
 
+## Standard benchmarks
+
+Three fixed datasets that anyone can regenerate byte for byte, so two tools, or one tool on two days,
+are scored on identical data against the same answer key. They are defined in
+[`src/data/benchmarks.ts`](src/data/benchmarks.ts), each pinned by the SHA-256 of its CSV.
+
+| Benchmark | Rows | Columns | What it holds |
+|---|---|---|---|
+| `india` | 10,000 | 22 | Indian identifiers, their near-misses and hard negatives |
+| `global` | 10,000 | 121 | The whole catalog as of benchmark version 1 |
+| `secrets` | 10,000 | 17 | Credentials and keys, next to opaque business identifiers |
+
+In the app: *Score a tool* → *Use*, then Download and *Answer key*. From a terminal:
+
+```bash
+npm run cli -- benchmark india --out india.csv --answer-key india.key.json
+shasum -a 256 india.csv   # cbe88c09d242c2a30f57f262ea79ba7d0a6d41682c38ecc1a59354f2f0c86d95
+```
+
+Run your tool over the file, then load its results and the answer key in *Score a tool*. A benchmark
+is tied to one generator version; when the generator changes, a new benchmark version is published
+and the old one is retired. A synthetic benchmark complements a trial on your own data. It does not
+replace one.
+
 ## Command line
 
 The same generator runs from a terminal, for CI pipelines and scripts. For the same settings it writes

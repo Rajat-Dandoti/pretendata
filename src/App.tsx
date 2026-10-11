@@ -17,6 +17,7 @@ import ColumnReference from './components/ColumnReference';
 import Scorecard from './components/Scorecard';
 import TextPanel from './components/TextPanel';
 import MaskCheck from './components/MaskCheck';
+import { Benchmark, BENCHMARK_VERSION } from './data/benchmarks';
 
 // ponytail: no more per-row left border — accent moved to a card around the whole category.
 // Kept the map deleted; category color still comes from CATEGORY_COLORS.
@@ -394,6 +395,18 @@ export default function App() {
     else if (format === 'ndjson') exportNDJSON(rows, selectedColumns, jsonStructure, nestDepth, headerMode);
     else exportSQL(rows, selectedColumns, headerMode);
     setToast({ text: `Downloaded ${rows.length.toLocaleString()} rows · ${format.toUpperCase()}${seedNum != null ? ` · seed ${seedNum}` : ''}` });
+  };
+
+  // A standard benchmark fixes every setting that affects the bytes of the file.
+  const useBenchmark = (b: Benchmark) => {
+    setSelectedPreset('Custom');
+    setSelectedColumns(new Set(b.columnIds));
+    setRowCount(b.rowCount);
+    setSeedStr(String(b.seed));
+    setLocale(b.locale);
+    setSparsity(0); setDensity(100); setFormatting('canonical'); setHeaderMode('descriptive'); setFormat('csv');
+    setShowScorecard(false);
+    setToast({ text: `Benchmark v${BENCHMARK_VERSION} · ${b.name} loaded. Download it and its answer key, run your tool, then score the results.` });
   };
 
   const cancelGeneration = () => {
@@ -1197,7 +1210,7 @@ export default function App() {
       </div>
 
       {showReference && <ColumnReference onClose={() => setShowReference(false)} locale={locale} />}
-      {showScorecard && <Scorecard onClose={() => setShowScorecard(false)} />}
+      {showScorecard && <Scorecard onClose={() => setShowScorecard(false)} onUseBenchmark={useBenchmark} />}
       {showMaskCheck && <MaskCheck onClose={() => setShowMaskCheck(false)} />}
       {showText && <TextPanel onClose={() => setShowText(false)} seed={seedNum} locale={locale} formatting={formatting} />}
 

@@ -6,6 +6,7 @@ import {
   FieldMap, KeyColumn, Level, PairOutcome, Table, Verdict, PAIR_LABELS, VERDICT_LABELS,
 } from '../lib/scorecard';
 import { downloadText } from '../lib/exporters';
+import { BENCHMARKS, BENCHMARK_VERSION, Benchmark, matchBenchmark } from '../data/benchmarks';
 import { Button, Dropdown, T } from '../lib/ui';
 import { cn } from '../lib/utils';
 
@@ -44,11 +45,11 @@ function Stat({ id, title, main, rest }: { id: string; title: string; main: stri
 
 // Slide-out panel: load a detection tool's results, say how its labels map to "detected",
 // and see where it was right. Everything is read and scored in the browser.
-export default function Scorecard({ onClose }: { onClose: () => void }) {
+export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => void; onUseBenchmark: (b: Benchmark) => void }) {
   const [table, setTable] = useState<Table | null>(null);
   const [source, setSource] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [key, setKey] = useState<{ columns: KeyColumn[]; name: string } | null>(null);
+  const [key, setKey] = useState<{ columns: KeyColumn[]; name: string; benchmark?: Benchmark } | null>(null);
   const [fields, setFields] = useState<FieldMap | null>(null);
   const [levels, setLevels] = useState<Record<string, Level>>({});
   const [problemsOnly, setProblemsOnly] = useState(false);
@@ -78,7 +79,7 @@ export default function Scorecard({ onClose }: { onClose: () => void }) {
     try {
       const m = JSON.parse(text);
       if (!Array.isArray(m?.columns) || !m.columns.every((c: any) => c?.id && c?.expectation)) throw new Error();
-      setKey({ columns: keyFromManifest(m), name }); setError(null);
+      setKey({ columns: keyFromManifest(m), name, benchmark: matchBenchmark(m) }); setError(null);
     } catch {
       setError('That is not a Pretendata answer key (version 2 or later).');
     }
@@ -126,9 +127,28 @@ export default function Scorecard({ onClose }: { onClose: () => void }) {
                 <input type="file" accept=".json" className="hidden" data-role="key" onChange={e => readFile(e, loadKey)} />
               </label>
               {source && <span className={T.meta}>{source} · {table?.rows.length} results</span>}
+              {key?.benchmark && <span data-role="benchmark" className="text-[11px] font-medium px-1.5 py-0.5 rounded border bg-indigo-50 text-indigo-700 border-indigo-100">Benchmark v{BENCHMARK_VERSION} · {key.benchmark.name}</span>}
             </div>
             {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
           </div>
+
+          {!table && (
+            <div className="space-y-2">
+              <span className={cn(T.label, 'block')}>Standard benchmarks</span>
+              <p className={T.meta}>Fixed datasets that anyone can regenerate byte for byte, so two tools are scored on identical data. Pick one, download it, run your tool, then come back with its results and the answer key.</p>
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                {BENCHMARKS.map(b => (
+                  <div key={b.id} className="flex items-center gap-3 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-slate-700">{b.name} <span className={T.meta}>· {b.rowCount.toLocaleString()} rows · {b.columnIds.length} columns</span></div>
+                      <div className={T.meta}>{b.description}</div>
+                    </div>
+                    <Button className="ml-auto shrink-0" onClick={() => onUseBenchmark(b)} aria-label={`Use the ${b.name} benchmark`}>Use</Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {table && fields && card && (
             <>

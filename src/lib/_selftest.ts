@@ -1,12 +1,14 @@
 // Runs every module's _selfCheck under `npm test`. Keeps the checks out of the
 // browser bundle and actually executes them (they never ran before).
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { BENCHMARKS, BENCHMARK_GENERATOR, BENCHMARK_VERSION, matchBenchmark } from '../data/benchmarks';
 import { AVAILABLE_COLUMNS, PRESETS } from '../data/schema';
 import { _selfCheck as validators } from './validators';
 import { _selfCheck as manifest } from './manifest';
 import { _selfCheck as share } from './share';
 import { _selfCheck as zip } from './zip';
-import { _selfCheck as generate, generateRows, generateChunkText, rowsToCSV, rowsToNdjson, rowsToSQL, sqlColumns, sqlCreateTable, HEADER_MODES, IN_MEMORY_THRESHOLD, SQL_TABLE, UTF8_BOM } from './generate';
+import { _selfCheck as generate, generateRows, generateChunkText, rowsToCSV, rowsToNdjson, rowsToSQL, sqlColumns, sqlCreateTable, GENERATOR_VERSION, HEADER_MODES, IN_MEMORY_THRESHOLD, SQL_TABLE, UTF8_BOM } from './generate';
 import { rowsFromManifest } from './manifest';
 import { checkSeedContract } from './_seedcontract';
 import { _selfCheck as frameworks } from './frameworks';
@@ -69,7 +71,23 @@ checkSeedContract();
     const r = await run(...bad);
     if (r.code !== 2 || r.out !== '' || r.errors.length !== 1) throw new Error(`FAIL: CLI should reject ${JSON.stringify(bad)} with exit code 2`);
   }
+  // Standard benchmarks: every one still reproduces its pinned bytes, and is recognised from its answer key.
+  if (GENERATOR_VERSION !== BENCHMARK_GENERATOR) {
+    throw new Error(`FAIL: benchmark version ${BENCHMARK_VERSION} was pinned at generator version ${BENCHMARK_GENERATOR}, but GENERATOR_VERSION is ${GENERATOR_VERSION}. ` +
+      'Published benchmarks can no longer be reproduced: add a new benchmark version in src/data/benchmarks.ts (bump BENCHMARK_VERSION and BENCHMARK_GENERATOR, re-pin the hashes).');
+  }
+  const known = new Set(AVAILABLE_COLUMNS.map(c => c.id));
+  for (const b of BENCHMARKS) {
+    const missing = b.columnIds.filter(id => !known.has(id));
+    if (missing.length) throw new Error(`FAIL: benchmark ${b.id} lists unknown columns: ${missing}`);
+    const made = await run('benchmark', b.id, '--answer-key', 'b.json');
+    const sha = createHash('sha256').update(made.out).digest('hex');
+    if (sha !== b.sha256) throw new Error(`FAIL: benchmark ${b.id} no longer produces its pinned file (got sha256 ${sha})`);
+    if (matchBenchmark(JSON.parse(made.files['b.json']))?.id !== b.id) throw new Error(`FAIL: benchmark ${b.id} is not recognised from its own answer key`);
+  }
+  if (matchBenchmark({ ...JSON.parse((await run('benchmark', 'india', '--answer-key', 'b.json')).files['b.json']), seed: 5 })) throw new Error('FAIL: a different seed is not the benchmark');
   console.log('cli: output matches the app on both sides of the in-memory threshold');
+  console.log(`benchmarks: ${BENCHMARKS.length} standard datasets reproduce their pinned files (v${BENCHMARK_VERSION})`);
 }
 
 // COLUMNS.md claims to mirror the schema — hold it to that.

@@ -6,13 +6,15 @@
 //   pretendata --preset "India PII" --rows 1000000 --seed 42 --out india.csv --answer-key india.key.json
 //   pretendata --columns email,ssn --rows 100 --format ndjson
 //   pretendata text --pack prompt --count 500 --seed 7
+//   pretendata benchmark india --out india.csv --answer-key india.key.json
 //   pretendata list presets
 import { createWriteStream, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { AVAILABLE_COLUMNS, PRESETS, PRESET_LOCALES, expectationFor } from '../src/data/schema';
+import { BENCHMARKS, BENCHMARK_GENERATOR, BENCHMARK_VERSION, benchmarkById } from '../src/data/benchmarks';
 import {
-  EXPORT_FORMATS, ExportFormat, HEADER_MODES, HeaderMode, IN_MEMORY_THRESHOLD, STREAM_CHUNK_ROWS, UTF8_BOM,
+  EXPORT_FORMATS, ExportFormat, GENERATOR_VERSION, HEADER_MODES, HeaderMode, IN_MEMORY_THRESHOLD, STREAM_CHUNK_ROWS, UTF8_BOM,
   csvEscape, generateChunkText, generateRows, headersFor, rekeyRows, rowsToCSV, rowsToNdjson, rowsToSQL, sqlCreateTable,
 } from '../src/lib/generate';
 import { LOCALES, LocaleId } from '../src/lib/locale';
@@ -26,7 +28,8 @@ const HELP = `pretendata — synthetic, privacy-safe test data with a known answ
 Usage
   pretendata [generate] [options]     tabular data (the default command)
   pretendata text [options]           prose with embedded identifiers, as NDJSON
-  pretendata list columns|presets     what can be generated
+  pretendata benchmark <id>           a standard benchmark dataset (see: pretendata list benchmarks)
+  pretendata list columns|presets|benchmarks
 
 Generate
   --preset <name>          a named column bundle (see: pretendata list presets)
@@ -93,7 +96,8 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
     if (command === 'list') {
       if (what === 'presets') await io.write(Object.entries(PRESETS).map(([name, ids]) => `${name}\t${ids.join(',')}`).join('\n') + '\n');
       else if (what === 'columns') await io.write(AVAILABLE_COLUMNS.map(c => [c.id, c.name, c.category, expectationFor(c)].join('\t')).join('\n') + '\n');
-      else fail('list what? columns or presets');
+      else if (what === 'benchmarks') await io.write(BENCHMARKS.map(b => `${b.id}\tv${BENCHMARK_VERSION}\t${b.rowCount} rows, ${b.columnIds.length} columns\t${b.description}`).join('\n') + '\n');
+      else fail('list what? columns, presets or benchmarks');
       return 0;
     }
 
@@ -103,6 +107,18 @@ export async function main(argv: string[], io: Io, log: (line: string) => void =
         seed, locale: oneOf(v.locale, localeIds, 'locale', 'en'), formatting,
       });
       await io.write(docsToNdjson(docs));
+      return 0;
+    }
+    if (command === 'benchmark') {
+      const b = benchmarkById(what ?? '') ?? fail(`unknown benchmark "${what ?? ''}" (see: pretendata list benchmarks)`);
+      if (GENERATOR_VERSION !== BENCHMARK_GENERATOR) fail(`benchmark version ${BENCHMARK_VERSION} was pinned at generator version ${BENCHMARK_GENERATOR}; this build is version ${GENERATOR_VERSION} and cannot reproduce it`);
+      // Fixed in every respect: a CSV with default settings, exactly as the app's Download writes it.
+      const cols = AVAILABLE_COLUMNS.filter(c => b.columnIds.includes(c.id));
+      await io.write(UTF8_BOM + rowsToCSV(generateRows({ columnIds: b.columnIds, rowCount: b.rowCount, seed: b.seed, locale: b.locale }), cols));
+      if (v['answer-key']) {
+        const key = buildManifest(b.columnIds, { seed: b.seed, rowCount: b.rowCount, sparsityPct: 0, locale: b.locale, seeding: 'whole', densityPct: 100, headerMode: 'descriptive', formatting: 'canonical' });
+        io.writeFile(v['answer-key'], JSON.stringify(key, null, 2));
+      }
       return 0;
     }
     if (command !== 'generate') fail(`unknown command "${command}" (try --help)`);
