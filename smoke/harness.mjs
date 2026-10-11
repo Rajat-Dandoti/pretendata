@@ -69,7 +69,7 @@ await send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPa
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const page = {
   base, downloads, errors, external, dialogs, out: OUT,
-  async goto(path = '/') { await send('Page.navigate', { url: base + path }); await sleep(300); await page.waitFor('document.readyState === "complete" && !!document.querySelector("#root")?.firstChild'); },
+  async goto(path = '/') { await send('Page.navigate', { url: base + path }); await sleep(300); await page.waitFor('document.readyState === "complete" && (!document.querySelector("#root") || !!document.querySelector("#root").firstChild)'); },
   async eval(expr) { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error('eval failed: ' + (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text) + '\n  in: ' + expr.slice(0, 200)); return r.result.value; },
   async waitFor(expr, ms = 15000) { const t = Date.now(); while (Date.now() - t < ms) { if (await page.eval(`!!(${expr})`).catch(() => false)) return; await sleep(100); } throw new Error('timeout waiting for: ' + expr); },
   // click the first element matching a CSS selector, or (with text) the first such element whose text/title/aria-label contains it

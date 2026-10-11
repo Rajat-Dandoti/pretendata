@@ -20,7 +20,8 @@
     "smoke": "vite build && node smoke/run.mjs",
     "pin-seed": "tsx src/lib/_seedcontract.ts",
     "cli": "tsx bin/pretendata.ts",
-    "build:cli": "vite build -c vite.cli.config.ts"
+    "build:cli": "vite build -c vite.cli.config.ts",
+    "build:reference": "tsx scripts/build-reference.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",

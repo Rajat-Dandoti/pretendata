@@ -22,8 +22,9 @@ import { _selfCheck as fixtures } from './fixtures';
 import { _selfCheck as maskcheck } from './maskcheck';
 import { _selfCheck as reident } from './reident';
 import { _selfCheck as relational, generateRelated, relatedToSQL } from './relational';
+import { _selfCheck as referencePagesCheck } from './referencePages';
 
-for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify, text, fixtures, maskcheck, reident, relational]) await f();
+for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify, text, fixtures, maskcheck, reident, relational, referencePagesCheck]) await f();
 checkSeedContract();
 
 // SQL export, loaded into a real engine (Node's built-in SQLite): every value must come back
