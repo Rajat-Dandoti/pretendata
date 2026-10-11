@@ -26,6 +26,9 @@ const STYLE = `
   .button { display: inline-block; background: #4f46e5; color: #fff; text-decoration: none; padding: .5rem .9rem; border-radius: 8px; font-weight: 600; }
 `;
 
+// Same icon as index.html: the header logo, inline so a page needs no second file.
+const ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234f39f6'/%3E%3Cg transform='translate(6 6) scale(.8333)' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='M12 8v4'/%3E%3Cpath d='M12 16h.01'/%3E%3C/g%3E%3C/svg%3E";
+
 function shell(title: string, description: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -34,6 +37,7 @@ function shell(title: string, description: string, body: string): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} — Pretendata</title>
 <meta name="description" content="${esc(description)}">
+<link rel="icon" href="${ICON}">
 <style>${STYLE}</style>
 </head>
 <body>
