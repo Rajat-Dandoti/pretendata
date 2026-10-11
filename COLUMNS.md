@@ -328,6 +328,25 @@ In JavaScript use `[...text].slice(start, end).join('')`.
 
 ---
 
+## Secrets fixture repository
+
+*Text* panel → *Download zip*. Built by [`src/lib/fixtures.ts`](src/lib/fixtures.ts): three services
+under `services/svc-NN/`, each with the same files and its own secrets.
+
+| File | Planted secrets | Decoys that must not fire |
+|---|---|---|
+| `.env` | AWS key pair, Stripe key, basic-auth URL | `${GITHUB_TOKEN}`, `your-api-key-here`, `changeme` |
+| `config/settings.yaml` | GitHub token, Google API key | `<REDACTED>`, a run of `x` |
+| `src/client.js` | JWT | `process.env.API_KEY`, the AWS documentation example key |
+| `deploy/id_rsa.pem` | PEM private key | — |
+| `db/seed.sql` | bcrypt hash | `!` (a disabled password) |
+
+`answer-key.json` lists every planted value with `file`, `line`, `type` and `expectation`. Every file
+says in its first line that the secrets are fake; they are still shaped like real ones, so pushing the
+fixture to a public repository can trigger a provider's secret-scanning alerts.
+
+---
+
 ## Presets
 
 Named column bundles in `PRESETS` (schema.ts). Two families:

@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { X, FileDown } from 'lucide-react';
+import { X, FileDown, FolderArchive } from 'lucide-react';
 import { EXPECTATION_LABELS, Expectation } from '../data/schema';
 import { PACKS } from '../data/templates';
 import { generateDocs, docsToNdjson, Doc, TextPack, TEXT_PACKS } from '../lib/text';
 import { generateDocsInWorker } from '../lib/streaming';
-import { downloadText } from '../lib/exporters';
+import { downloadText, downloadBlob } from '../lib/exporters';
+import { buildSecretsRepo, secretsRepoZip, SECRETS_ZIP_NAME } from '../lib/fixtures';
 import type { LocaleId } from '../lib/locale';
 import type { Formatting } from '../lib/variants';
 import { Button, Dropdown, T } from '../lib/ui';
@@ -106,6 +107,20 @@ export default function TextPanel({ onClose, seed, locale, formatting }: {
                 <Highlighted doc={d} />
               </div>
             ))}
+          </div>
+
+          <div className="border-t border-slate-200 pt-4 space-y-2">
+            <span className={cn(T.label, 'block')}>Secrets fixture repository</span>
+            <p className={T.body}>
+              For secret scanners: a zip of <code className="font-mono text-xs">.env</code>, YAML, source, SQL and key files for three
+              services, each with fake secrets planted in it and decoys a good scanner leaves alone (placeholders, variable
+              references, a vendor's documented example key). <code className="font-mono text-xs">answer-key.json</code> gives the file and
+              line of every one.
+            </p>
+            <Button size="md" aria-label="Download secrets fixture"
+              onClick={() => downloadBlob(secretsRepoZip(buildSecretsRepo({ seed })), SECRETS_ZIP_NAME)}>
+              <FolderArchive size={16} /> Download zip
+            </Button>
           </div>
         </div>
       </div>

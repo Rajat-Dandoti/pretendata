@@ -16,6 +16,8 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+export { downloadBlob };
+
 export function downloadText(text: string, filename: string, mime: string) {
   downloadBlob(new Blob([text], { type: mime }), filename);
 }

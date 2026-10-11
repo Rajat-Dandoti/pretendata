@@ -15,8 +15,9 @@ import { _selfCheck as streaming } from './streaming';
 import { _selfCheck as scorecard } from './scorecard';
 import { _selfCheck as identify } from './identify';
 import { _selfCheck as text } from './text';
+import { _selfCheck as fixtures } from './fixtures';
 
-for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify, text]) await f();
+for (const f of [validators, manifest, share, zip, generate, frameworks, reference, nesting, streaming, scorecard, identify, text, fixtures]) await f();
 checkSeedContract();
 
 // SQL export, loaded into a real engine (Node's built-in SQLite): every value must come back

@@ -30,6 +30,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Text and AI prompts** — emails, support tickets, chat, clinical notes, log lines and prompts with
   identifiers embedded in the prose. Each document lists its entities (start, end, type, value) as its
   own answer key, for testing mail and chat DLP, entity recognisers and AI guardrails.
+- **Secrets fixture repository** — a zip of `.env`, YAML, source, SQL and key files with fake secrets
+  planted in them and decoys beside them, plus an answer key with file and line, for Gitleaks-style
+  scanners and pre-commit hooks.
 - **Near-miss / DLP-Negative controls** — the same identifiers with the check digit deliberately broken,
   a never-issued range or two digits swapped, plus hard negatives (timestamps, order and tracking
   numbers) that only look like identifiers. Each is guaranteed valid as nothing, to measure a
