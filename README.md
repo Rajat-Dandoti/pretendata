@@ -114,6 +114,8 @@ are generated:
 | `npm run preview` | Preview the production build |
 | `npm run lint` | TypeScript type-check (`tsc --noEmit`) |
 | `npm test` | Self-checks: checksum round-trips, format asserts, the pinned seed contract, the streaming writer, the answer key, the scorecard, and that COLUMNS.md covers every column |
+| `npm run cli -- …` | The command-line tool (see below) |
+| `npm run build:cli` | Bundle the command-line tool into `dist-cli/pretendata.js` |
 | `npm run pin-seed` | Records the seeded output of new columns in `src/lib/seed-contract.json`. Refuses to overwrite a changed column until `GENERATOR_VERSION` is bumped |
 | `npm run smoke` | Builds, then drives the real app in headless Chrome: generate, export, both large-file paths, keyboard use, answer key, scorecard. Needs Chrome; set `CHROME` to its path if it is not found |
 | `npm run server` | Optional API server (see below) |
@@ -132,6 +134,23 @@ Pages/Workers and Netlify do this automatically for a Vite SPA; GitHub Pages nee
 [streamsaver](https://github.com/jimmywarting/StreamSaver.js) service worker used as the >100k-row
 export fallback in browsers without the File System Access API — make sure your host serves these as
 static files at the site root.
+
+## Command line
+
+The same generator runs from a terminal, for CI pipelines and scripts. For the same settings it writes
+the same bytes as the app's Download button, so one answer key fits both.
+
+```bash
+npm run cli -- --preset "India PII" --rows 1000000 --seed 42 --out india.csv --answer-key india.key.json
+npm run cli -- --columns email,ssn --rows 100 --format ndjson
+npm run cli -- text --pack prompt --count 500 --seed 7 > prompts.ndjson
+npm run cli -- list presets
+npm run cli -- --help
+```
+
+`npm run build:cli` bundles it into `dist-cli/pretendata.js`, a single Node script (the `bin` entry of this
+package), so `npm link` gives you a `pretendata` command. Output goes to standard output unless `--out`
+is given; large runs are written chunk by chunk and never held in memory.
 
 ## Optional API server
 

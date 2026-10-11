@@ -108,6 +108,12 @@ export function makeRow(cols: ColumnDef[], o: RowOptions = {}): Record<string, a
 }
 
 // ---------- streaming chunks (large datasets) ----------
+/**
+ * Up to this many rows a dataset is built whole (one seeded stream); above it, it is written as
+ * independently seeded chunks. Part of the seed contract: it decides which of the two a seed means.
+ */
+export const IN_MEMORY_THRESHOLD = 100_000;
+
 /** Rows per stream chunk. Part of the seed contract: changing it changes seeded output. */
 export const STREAM_CHUNK_ROWS = 5_000;
 

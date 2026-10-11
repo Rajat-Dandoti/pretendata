@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Generate synthetic, privacy-safe test data (checksum-valid IDs, DLP false-positive controls, compliance tagging) for QA and DLP/DSPM testing.",
   "license": "MIT",
+  "bin": {
+    "pretendata": "dist-cli/pretendata.js"
+  },
   "scripts": {
     "dev": "vite --port=5173 --host=0.0.0.0",
     "build": "vite build",
@@ -15,7 +18,9 @@
     "server": "tsx watch server/index.ts",
     "dev:all": "tsx watch server/index.ts & vite --port=5173 --host=0.0.0.0; kill $!",
     "smoke": "vite build && node smoke/run.mjs",
-    "pin-seed": "tsx src/lib/_seedcontract.ts"
+    "pin-seed": "tsx src/lib/_seedcontract.ts",
+    "cli": "tsx bin/pretendata.ts",
+    "build:cli": "vite build -c vite.cli.config.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",

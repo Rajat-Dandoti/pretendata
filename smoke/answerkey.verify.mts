@@ -14,4 +14,10 @@ const csv = UTF8_BOM + rowsToCSV(rowsFromManifest(big), cols);
 const h = createHash('sha256').update(csv).digest('hex');
 const ok = h === readFileSync(`${H}/ak-bighash.txt`, 'utf8');
 console.log(`${ok ? '  ok  ' : '  FAIL'} streamed: 150,000-row CSV rebuilt in Node from the key has the same SHA-256 as the file Chrome wrote`);
-process.exit(same && ok ? 0 : 1);
+// The command-line tool, as a real process with the same settings, writes the same file as Chrome did.
+const { execFileSync } = await import('node:child_process');
+const cliOut = `${H}/ak-cli.csv`;
+execFileSync('npx', ['tsx', `${REPO}/bin/pretendata.ts`, '--columns', big.columns.map((c: any) => c.id).join(','), '--rows', String(big.rowCount), '--seed', String(big.seed), '--out', cliOut], { stdio: ['ignore', 'ignore', 'ignore'] });
+const cli = createHash('sha256').update(readFileSync(cliOut)).digest('hex') === readFileSync(`${H}/ak-bighash.txt`, 'utf8');
+console.log(`${cli ? '  ok  ' : '  FAIL'} the CLI, run as a process with the same settings, writes a byte-identical 150,000-row file`);
+process.exit(same && ok && cli ? 0 : 1);

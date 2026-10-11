@@ -10,7 +10,7 @@ import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } f
 import { streamGenerateToFile, generateInWorker, streamPoolSize, isGzipSupported } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION, ShareState } from './lib/share';
 import { LOCALES, LocaleId } from './lib/locale';
-import { makeRow, headersFor, HeaderMode, HEADER_MODES, ExportFormat, EXPORT_FORMATS } from './lib/generate';
+import { makeRow, headersFor, HeaderMode, HEADER_MODES, ExportFormat, EXPORT_FORMATS, IN_MEMORY_THRESHOLD } from './lib/generate';
 import { applySeed } from './lib/seed';
 import { Formatting, FORMATTINGS } from './lib/variants';
 import ColumnReference from './components/ColumnReference';
@@ -35,7 +35,6 @@ function ExpectationMark({ expectation }: { expectation: Expectation }) {
 
 const MIN_ROWS = 10;
 const MAX_ROWS = 100_000_000;
-const IN_MEMORY_THRESHOLD = 100_000;
 
 // ponytail: pure log10 range 10..100M → slider 0..700. Every decade = 100 slider units,
 // so each decade label (10, 100, 1k … 100M) lands on an exact multiple of 100.
