@@ -25,13 +25,14 @@ const LEVELS: { value: Level; label: string }[] = [
 
 const VERDICT_CHIP: Record<Verdict, string> = {
   'correct': 'bg-green-100 text-green-800 border-green-200',
+  'misnamed': 'bg-red-100 text-red-800 border-red-200',
   'generic': 'bg-amber-100 text-amber-800 border-amber-200',
   'soft-flag': 'bg-amber-100 text-amber-800 border-amber-200',
   'missed': 'bg-red-100 text-red-800 border-red-200',
   'false-positive': 'bg-red-100 text-red-800 border-red-200',
   'context': 'bg-slate-100 text-slate-600 border-slate-200',
 };
-const PROBLEMS: Verdict[] = ['generic', 'soft-flag', 'missed', 'false-positive'];
+const PROBLEMS: Verdict[] = ['misnamed', 'generic', 'soft-flag', 'missed', 'false-positive'];
 
 function Stat({ id, title, main, rest }: { id: string; title: string; main: string; rest: string }) {
   return (
@@ -61,7 +62,7 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
       const saved = loadProfile();
       // Reuse the saved field choices when this file has those fields; otherwise guess.
       const f = saved && [saved.fields.name, saved.fields.label].every(x => t.fields.includes(x))
-        ? { ...saved.fields, score: saved.fields.score && t.fields.includes(saved.fields.score) ? saved.fields.score : null }
+        ? { ...saved.fields, score: saved.fields.score && t.fields.includes(saved.fields.score) ? saved.fields.score : null, kind: saved.fields.kind && t.fields.includes(saved.fields.kind) ? saved.fields.kind : null }
         : guessFields(t, columns);
       if (!f) throw new Error('None of the names in this file match a Pretendata column. Check that it lists one result per column.');
       setTable(t); setFields(f); setSource(name); setError(null);
@@ -82,6 +83,19 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
       setKey({ columns: keyFromManifest(m), name, benchmark: matchBenchmark(m) }); setError(null);
     } catch {
       setError('That is not a Pretendata answer key (version 2 or later).');
+    }
+  };
+
+  const loadProfileFile = (text: string) => {
+    try {
+      const p = JSON.parse(text);
+      if (p?.kind !== 'pretendata-tool-profile' || typeof p.fields?.name !== 'string' || typeof p.fields?.label !== 'string' || typeof p.levels !== 'object') throw new Error();
+      // Stored as the remembered profile, so it applies to the results already loaded and to the next ones.
+      localStorage.setItem(PROFILE_KEY, JSON.stringify({ fields: p.fields, levels: p.levels } satisfies Profile));
+      setLevels(p.levels); setError(null);
+      if (table && [p.fields.name, p.fields.label].every((f: string) => table.fields.includes(f))) setFields(p.fields);
+    } catch {
+      setError('That is not a Pretendata tool profile.');
     }
   };
 
@@ -126,6 +140,11 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
                 <KeyRound size={16} /> {key ? key.name : 'Answer key (optional)'}
                 <input type="file" accept=".json" className="hidden" data-role="key" onChange={e => readFile(e, loadKey)} />
               </label>
+              <label title="Load a saved tool profile: which field is which, and what each of the tool's labels means"
+                className="inline-flex items-center gap-2 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 cursor-pointer">
+                Tool profile
+                <input type="file" accept=".json" className="hidden" data-role="profile" onChange={e => readFile(e, loadProfileFile)} />
+              </label>
               {source && <span className={T.meta}>{source} · {table?.rows.length} results</span>}
               {key?.benchmark && <span data-role="benchmark" className="text-[11px] font-medium px-1.5 py-0.5 rounded border bg-indigo-50 text-indigo-700 border-indigo-100">Benchmark v{BENCHMARK_VERSION} · {key.benchmark.name}</span>}
             </div>
@@ -152,7 +171,7 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
 
           {table && fields && card && (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([['name', 'Column name field'], ['label', 'Label field']] as const).map(([k, title]) => (
                   <div key={k} className="space-y-1">
                     <span className={cn(T.meta, 'block')}>{title}</span>
@@ -160,8 +179,12 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
                   </div>
                 ))}
                 <div className="space-y-1">
-                  <span className={cn(T.meta, 'block')}>Score field (optional)</span>
+                  <span className={cn(T.meta, 'block')} title="A number such as risk or confidence. Used to tell whether a near-miss was rated below the valid value.">Score field (optional)</span>
                   <Dropdown value={fields.score ?? ''} options={[{ value: '', label: 'None' }, ...fieldOptions]} onChange={v => setFields({ ...fields, score: v || null })} />
+                </div>
+                <div className="space-y-1">
+                  <span className={cn(T.meta, 'block')} title="Where the tool says what exactly it found, e.g. Aadhaar Number. Used to catch a confident flag under another identifier's name.">Kind field (optional)</span>
+                  <Dropdown value={fields.kind ?? ''} options={[{ value: '', label: 'None' }, ...fieldOptions]} onChange={v => setFields({ ...fields, kind: v || null })} />
                 </div>
               </div>
 
@@ -191,7 +214,7 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
 
               <div className="flex flex-wrap gap-3">
                 <Stat id="detect" title="Should fire" main={`${card.detect.correct} of ${card.detect.total} correct`}
-                  rest={`${card.detect.generic} flagged generically · ${card.detect.missed} missed`} />
+                  rest={`${card.detect.misnamed} wrong name · ${card.detect.generic} generic · ${card.detect.missed} missed`} />
                 <Stat id="ignore" title="Should not fire" main={`${card.ignore.correct} of ${card.ignore.total} quiet`}
                   rest={`${card.ignore.soft} soft flags · ${card.ignore.falsePositive} false positives`} />
                 <Stat id="pairs" title="Near-miss pairs" main={`${pairs('told-apart')} of ${card.pairs.length} told apart`}
@@ -211,6 +234,10 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
                 </label>
                 <span className={T.meta}>{shown.length} of {card.columns.length} columns</span>
                 <div className="ml-auto flex gap-2">
+                  <Button aria-label="Save tool profile" title="Save the field choices and label meanings for this tool as a file, to reuse or share"
+                    onClick={() => downloadText(JSON.stringify({ kind: 'pretendata-tool-profile', tool, fields, levels: Object.fromEntries(labels.map(l => [l.label, levelOf(l.label)])) }, null, 2), `${tool || 'tool'}.profile.json`, 'application/json')}>
+                    <FileDown size={14} /> Profile
+                  </Button>
                   <Button aria-label="Export scorecard as Markdown"
                     onClick={() => downloadText(toMarkdown(card, { tool, scoredAgainstKey: !!key }), 'pretendata.scorecard.md', 'text/markdown')}>
                     <FileDown size={14} /> Markdown
@@ -242,6 +269,7 @@ export default function Scorecard({ onClose, onUseBenchmark }: { onClose: () => 
                           </td>
                           <td className="px-3 py-1.5 whitespace-nowrap">
                             <span className={cn('text-[11px] font-medium px-1.5 py-0.5 rounded border', VERDICT_CHIP[c.verdict])}>{VERDICT_LABELS[c.verdict]}</span>
+                            {c.namedAs && <span className={cn(T.meta, 'block mt-0.5')}>flagged as {c.namedAs}</span>}
                             {pair && <span className={cn(T.meta, 'block mt-0.5')}>{PAIR_LABELS[pair.outcome]}</span>}
                           </td>
                         </tr>

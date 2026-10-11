@@ -97,6 +97,8 @@ export interface FieldMap {
   label: string;
   /** Optional numeric field (risk, confidence): breaks ties when comparing a near-miss with its origin. */
   score: string | null;
+  /** Optional field where the tool names what it found ("Aadhaar Number"), to catch a right flag under the wrong name. */
+  kind?: string | null;
 }
 
 // Letters and digits only: "First Name", "first_name" (a SQL column) and "firstName" are one name.
@@ -125,7 +127,35 @@ export function guessFields(table: Table, key: KeyColumn[]): FieldMap | null {
   // The label is the coarsest text field: a type has fewer distinct values than a subtype.
   const label = rest.filter(f => !numeric(f)).sort((a, b) => distinct(a).size - distinct(b).size)[0];
   if (!label) return null;
-  return { name, label, score: rest.find(numeric) ?? null };
+  // The finest text field is where a tool says what exactly it found.
+  const kind = rest.filter(f => !numeric(f) && f !== label).sort((a, b) => distinct(b).size - distinct(a).size)[0] ?? null;
+  return { name, label, score: rest.find(numeric) ?? null, kind };
+}
+
+// ---------- did the tool call it the right thing ----------
+// Words that say nothing about which identifier is meant.
+const FILLER = new Set(['number', 'no', 'id', 'code', 'address', 'text', 'potential', 'possible', 'type', 'value', 'data', 'the', 'of', 'in', 'us', 'uk', 'de', 'sa', 'and']);
+const words = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length >= 2 && !FILLER.has(w));
+
+/**
+ * Whether the tool's own name for a finding fits the column it was found in.
+ *   right: it shares a word with this column ("Aadhaar Number" on Aadhaar)
+ *   wrong: it does not, and it spells out another column in full ("SSN Number" on Routing Number)
+ *   null:  it names nothing in particular ("Potential PII")
+ * Deliberately lenient towards "right": a wrong verdict needs every word of another column.
+ */
+export function naming(kind: string, col: KeyColumn, key: KeyColumn[]): { verdict: 'right' | 'wrong' | null; namedAs?: string } {
+  const said = words(kind);
+  if (said.length === 0) return { verdict: null };
+  const own = [norm(col.name), norm(col.id)], flat = norm(kind);
+  // A word of the tool's inside the column's name ("ip" in "ipv6address"), or a word of the column's in the
+  // tool's text — as a whole word, or inside a run-together name when long enough not to be an accident
+  // ("credit" in "creditcardnumber", but not "pan" in "company").
+  const theirs = words(`${col.name} ${col.id}`);
+  if (said.some(w => own.some(n => n.includes(w))) || theirs.some(w => said.includes(w) || (w.length >= 5 && flat.includes(w)))) return { verdict: 'right' };
+  const spelledOut = (c: KeyColumn) => [words(c.id), words(c.name)].some(ws => ws.length > 0 && ws.every(w => said.includes(w)));
+  const other = key.find(c => c.id !== col.id && !c.nearMissOf && spelledOut(c));
+  return other ? { verdict: 'wrong', namedAs: other.name } : { verdict: null };
 }
 
 // ---------- how strong is a label ----------
@@ -147,9 +177,10 @@ export function distinctLabels(table: Table, fields: FieldMap): { label: string;
 }
 
 // ---------- scoring ----------
-export type Verdict = 'correct' | 'generic' | 'missed' | 'false-positive' | 'soft-flag' | 'context';
+export type Verdict = 'correct' | 'misnamed' | 'generic' | 'missed' | 'false-positive' | 'soft-flag' | 'context';
 export const VERDICT_LABELS: Record<Verdict, string> = {
   'correct': 'Correct',
+  'misnamed': 'Wrong name',
   'generic': 'Flagged generically',
   'missed': 'Missed',
   'false-positive': 'False positive',
@@ -173,6 +204,8 @@ export interface ScoredColumn {
   score: number | null;
   level: Level;
   verdict: Verdict;
+  /** When the tool flagged this under another column's name: that column. */
+  namedAs?: string;
 }
 
 export type PairOutcome = 'told-apart' | 'not-told-apart' | 'inverted';
@@ -185,7 +218,7 @@ export interface PairResult {
 export interface Scorecard {
   columns: ScoredColumn[];
   /** Columns that should fire. */
-  detect: { total: number; correct: number; generic: number; missed: number };
+  detect: { total: number; correct: number; misnamed: number; generic: number; missed: number };
   /** Columns that should stay quiet. */
   ignore: { total: number; correct: number; soft: number; falsePositive: number };
   context: { total: number; flagged: number };
@@ -208,11 +241,17 @@ export function score(table: Table, fields: FieldMap, levels: Record<string, Lev
     if (scored.has(col.id)) continue; // first result for a column wins
     const label = r[fields.label];
     const level = levels[label] ?? guessLevel(label);
+    let verdict = VERDICT[col.expectation][level], namedAs: string | undefined;
+    // A should-fire column flagged with confidence, but as something else, is not a clean hit.
+    if (verdict === 'correct' && col.expectation === 'detect' && fields.kind) {
+      const n = naming(r[fields.kind], col, key);
+      if (n.verdict === 'wrong') { verdict = 'misnamed'; namedAs = n.namedAs; }
+    }
     scored.set(col.id, {
       id: col.id, name: col.name, expectation: col.expectation, label,
       detail: detailFields.map(f => r[f]).filter(Boolean).join(' · '),
       score: fields.score && isNumber(r[fields.score]) ? Number(r[fields.score]) : null,
-      level, verdict: VERDICT[col.expectation][level],
+      level, verdict, namedAs,
     });
   }
   const columns = key.filter(c => scored.has(c.id)).map(c => scored.get(c.id)!);
@@ -233,7 +272,7 @@ export function score(table: Table, fields: FieldMap, levels: Record<string, Lev
 
   return {
     columns,
-    detect: { total: count('detect'), correct: count('detect', 'correct'), generic: count('detect', 'generic'), missed: count('detect', 'missed') },
+    detect: { total: count('detect'), correct: count('detect', 'correct'), misnamed: count('detect', 'misnamed'), generic: count('detect', 'generic'), missed: count('detect', 'missed') },
     ignore: { total: count('ignore'), correct: count('ignore', 'correct'), soft: count('ignore', 'soft-flag'), falsePositive: count('ignore', 'false-positive') },
     context: { total: count('context'), flagged: columns.filter(c => c.expectation === 'context' && c.level !== 'none').length },
     pairs,
@@ -258,7 +297,7 @@ export function toMarkdown(card: Scorecard, opts: { tool?: string; scoredAgainst
     '',
     '| Measure | Result |',
     '|---|---|',
-    `| Should fire | ${card.detect.correct} of ${card.detect.total} correct, ${card.detect.generic} flagged generically, ${card.detect.missed} missed |`,
+    `| Should fire | ${card.detect.correct} of ${card.detect.total} correct, ${card.detect.misnamed} under the wrong name, ${card.detect.generic} flagged generically, ${card.detect.missed} missed |`,
     `| Should not fire | ${card.ignore.correct} of ${card.ignore.total} quiet, ${card.ignore.soft} soft flags, ${card.ignore.falsePositive} false positives |`,
     `| Near-miss pairs | ${pair('told-apart')} told apart, ${pair('not-told-apart')} not told apart, ${pair('inverted')} inverted |`,
     `| Context columns | ${card.context.flagged} of ${card.context.total} flagged (not scored) |`,
@@ -272,7 +311,7 @@ export function toMarkdown(card: Scorecard, opts: { tool?: string; scoredAgainst
   lines.push('## Columns', '', '| Column | Expected | Tool label | Detail | Verdict |', '|---|---|---|---|---|');
   for (const c of card.columns) {
     const detail = [c.detail, c.score === null ? '' : String(c.score)].filter(Boolean).join(' · ');
-    lines.push(`| ${mdCell(c.name)} | ${c.expectation} | ${mdCell(c.label)} | ${mdCell(detail)} | ${VERDICT_LABELS[c.verdict]} |`);
+    lines.push(`| ${mdCell(c.name)} | ${c.expectation} | ${mdCell(c.label)} | ${mdCell(detail)} | ${VERDICT_LABELS[c.verdict]}${c.namedAs ? ` (as ${mdCell(c.namedAs)})` : ''} |`);
   }
   if (card.unmatched.length) lines.push('', `Names in the results that match no column: ${card.unmatched.map(mdCell).join(', ')}.`);
   if (opts.scoredAgainstKey && card.missing.length) lines.push('', `Columns in the answer key with no result: ${card.missing.map(mdCell).join(', ')}.`);
@@ -297,19 +336,20 @@ export function _selfCheck() {
     ['Created At', 'TIME', 'Added Time', 30],
     ['SQL Injection', 'STATISTICAL', 'Statistical Text', 20],
     ['Gender', 'QUASI_IDENTIFIER', 'Gender', 60],
+    ['Routing Number', 'PII', 'SSN Number', 100],
     ['Mystery Column', 'PII', 'Name', 100],
   ].map(([n, t, s, r]) => ({ Attribute_Name: n, Attribute_Type: t, Attribute_SubType: s, Risk_Level: r, Confidence: null }));
   const key = keyFromCatalog();
   const check = (table: Table, how: string) => {
     const f = guessFields(table, key);
-    if (!f || f.name !== 'Attribute_Name' || f.label !== 'Attribute_Type' || f.score !== 'Risk_Level') throw new Error(`FAIL: guessFields (${how}): ${JSON.stringify(f)}`);
+    if (!f || f.name !== 'Attribute_Name' || f.label !== 'Attribute_Type' || f.score !== 'Risk_Level' || f.kind !== 'Attribute_SubType') throw new Error(`FAIL: guessFields (${how}): ${JSON.stringify(f)}`);
     const levels = Object.fromEntries(distinctLabels(table, f).map(l => [l.label, guessLevel(l.label)]));
     if (levels.PII !== 'detected' || levels.POTENTIAL_PII !== 'weak' || levels.UNIQUE_IDENTIFIER !== 'weak' || levels.TIME !== 'none') throw new Error(`FAIL: guessLevel (${how})`);
     const card = score(table, f, levels, key);
     const got = JSON.stringify([card.detect, card.ignore, card.context, card.unmatched, card.pairs.map(p => `${p.id}:${p.outcome}`)]);
     const want = JSON.stringify([
-      // should fire: aadhaar, email correct; iban, vin, gstin generic; ssn missed
-      { total: 6, correct: 2, generic: 3, missed: 1 },
+      // should fire: aadhaar, email correct; routing number flagged as an SSN; iban, vin, gstin generic; ssn missed
+      { total: 7, correct: 2, misnamed: 1, generic: 3, missed: 1 },
       // should not fire: created-at, sql injection quiet; four near-misses soft; salary a false positive
       { total: 7, correct: 2, soft: 4, falsePositive: 1 },
       { total: 1, flagged: 1 },
@@ -327,7 +367,15 @@ export function _selfCheck() {
   check(parseResults(JSON.stringify({ results })), 'wrapped json');
 
   const md = toMarkdown(card, { tool: 'Example' });
-  if (!md.includes('| Should fire | 2 of 6 correct, 3 flagged generically, 1 missed |') || !md.includes('| VIN (near-miss) | VIN (Vehicle) | Inverted |')) throw new Error('FAIL: scorecard markdown');
+  if (!md.includes('| Should fire | 2 of 7 correct, 1 under the wrong name, 3 flagged generically, 1 missed |') || !md.includes('| VIN (near-miss) | VIN (Vehicle) | Inverted |') || !md.includes('Wrong name (as SSN)')) throw new Error('FAIL: scorecard markdown');
+  // naming: lenient towards right, strict towards wrong
+  const byId = (id: string) => key.find(c => c.id === id)!;
+  const named = (kind: string, id: string) => naming(kind, byId(id), key).verdict;
+  for (const [kind, id, want] of [['Aadhaar Number', 'aadhaar', 'right'], ['IP Address v6', 'ipv6Address', 'right'], ['Potential Passport', 'passportNumber', 'right'], ['Name', 'firstName', 'right'],
+    ['Gst No', 'gstin', 'right'], ['CreditCardNumber', 'creditCard', 'right'], ['SSN Number', 'routingNumber', 'wrong'], ['Email', 'upiId', 'wrong'], ['Phone Number', 'accountNumber', 'wrong'],
+    ['Medical Condition', 'diagnosisCode', null], ['Potential PII', 'ein', null], ['ID Text', 'mrn', null], ['Company language', 'pan', null]] as const) {
+    if (named(kind, id) !== want) throw new Error(`FAIL: naming("${kind}" on ${id}) should be ${want}, got ${named(kind, id)}`);
+  }
 
   // scoring against a manifest matches on the header the tool saw, and reports what is absent
   const keyed = score(parseResults(JSON.stringify([{ col: 'col_01', kind: 'PII' }])), { name: 'col', label: 'kind', score: null }, { PII: 'detected' },

@@ -17,6 +17,7 @@ const RESULTS = [
   ['Created At', 'TIME', 'Added Time', 30],
   ['SQL Injection', 'STATISTICAL', 'Statistical Text', 20],
   ['Gender', 'QUASI_IDENTIFIER', 'Gender', 60],
+  ['Routing Number', 'PII', 'SSN Number', 100],
   ['Mystery Column', 'PII', 'Name', 100],
 ].map(([n, t, s, r]) => ({ Attribute_Name: n, Attribute_Type: t, Attribute_SubType: s, Risk_Level: r, Confidence: null }));
 const stat = id => `document.querySelector('[data-stat="${id}"]')?.textContent`;
@@ -36,10 +37,10 @@ export default async (page, check) => {
   await page.upload('input[data-role="results"]', results);
   await page.waitFor(stat('pairs'));
   const combos = await page.eval(`[...document.querySelectorAll('[role="dialog"] [role=combobox]')].map(b => b.textContent)`);
-  check(combos.join() === 'Attribute_Name,Attribute_Type,Risk_Level', `fields guessed: ${combos.join(', ')}`);
+  check(combos.join() === 'Attribute_Name,Attribute_Type,Risk_Level,Attribute_SubType', `fields guessed: ${combos.join(', ')}`);
   check(await page.eval(`document.querySelectorAll('[data-label]').length`) === 8, '8 distinct labels listed');
   check((await page.eval(stat('pairs'))).includes('2 of 4 told apart') && (await page.eval(stat('pairs'))).includes('1 not told apart · 1 inverted'), `near-miss pairs: ${await page.eval(stat('pairs'))}`);
-  check((await page.eval(stat('detect'))).includes('2 of 6 correct'), `should fire: ${await page.eval(stat('detect'))}`);
+  check((await page.eval(stat('detect'))).includes('2 of 7 correct') && (await page.eval(stat('detect'))).includes('1 wrong name'), `should fire: ${await page.eval(stat('detect'))}`);
   const fpBefore = await page.eval(stat('ignore'));
   check(fpBefore.includes('1 false positives'), `should not fire: ${fpBefore}`);
 
@@ -50,7 +51,8 @@ export default async (page, check) => {
 
   await page.click('[role="dialog"] input[type=checkbox]');
   const shown = await page.eval(`document.querySelectorAll('[role="dialog"] tbody tr').length`);
-  check(shown > 0 && shown < 14, `problems-only filter (${shown} rows)`);
+  check(await page.eval(`document.querySelector('[data-column="routingNumber"]').textContent.includes('flagged as SSN')`), 'routing number flagged as an SSN is called out');
+  check(shown > 0 && shown < 15, `problems-only filter (${shown} rows)`);
   await page.screenshot('scorecard.png');
 
   const md = await page.download(() => page.click('button[aria-label="Export scorecard as Markdown"]'));
@@ -58,7 +60,7 @@ export default async (page, check) => {
   check(md.name === 'pretendata.scorecard.md' && text.startsWith('# Scorecard: example-tool') && text.includes('| VIN (near-miss) | VIN (Vehicle) | Inverted |') && text.includes('Names in the results that match no column: Mystery Column.'), 'Markdown export has the summary, pairs and all columns');
   const js = await page.download(() => page.click('button[aria-label="Export scorecard as JSON"]'));
   const j = JSON.parse(readFileSync(js.path, 'utf8'));
-  check(j.columns.length === 14 && j.levels.STATISTICAL_SENSITIVE === 'none' && j.fields.label === 'Attribute_Type', 'JSON export carries columns and the tool profile');
+  check(j.columns.length === 15 && j.levels.STATISTICAL_SENSITIVE === 'none' && j.fields.label === 'Attribute_Type', 'JSON export carries columns and the tool profile');
 
   // the remapped label is remembered for the next run
   await page.reload();
