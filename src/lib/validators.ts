@@ -138,8 +138,29 @@ export function generateDLGermany(): string {
   return Array.from({ length: 11 }, () => charset[rand(36)]).join('');
 }
 
-// VIN — Faker is checksum-valid
-export function generateVIN(): string { return faker.vehicle.vin(); }
+// VIN — Faker gives the shape but a random position-9 check digit, so compute it:
+// transliterate (A=1 … Z=9, no I/O/Q), weight, mod 11, 10 → 'X'.
+const VIN_VALUES = '0123456789.ABCDEFGH..JKLMN.P.R..STUVWXYZ'; // value = index % 10
+const VIN_WEIGHTS = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+function vinCheckChar(vin: string): string {
+  let sum = 0;
+  for (let i = 0; i < 17; i++) sum += (VIN_VALUES.indexOf(vin[i]) % 10) * VIN_WEIGHTS[i];
+  return '0123456789X'[sum % 11];
+}
+export function generateVIN(): string {
+  const v = faker.vehicle.vin();
+  return v.slice(0, 8) + vinCheckChar(v) + v.slice(9);
+}
+
+// ---------- validity predicates (self-checks) ----------
+/** Luhn over the digits of `s` (separators ignored). */
+export function luhnValid(s: string): boolean {
+  const d = s.replace(/\D/g, '');
+  return luhnCheckDigit(d.slice(0, -1)) === parseInt(d.slice(-1), 10);
+}
+export function vinValid(v: string): boolean {
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(v) && vinCheckChar(v) === v[8];
+}
 
 // IMEI: 14 random + Luhn
 export function generateIMEI(): string {
@@ -426,5 +447,13 @@ export function _selfCheck() {
   const badE = breakChecksum(generateEAN13());
   let bs = 0; for (let i = 0; i < 13; i++) bs += parseInt(badE[i],10) * (i % 2 === 0 ? 1 : 3);
   assert(bs % 10 !== 0, 'bad EAN-13 checksum fails');
+  // VIN: check digit valid, and one bump of the last char always breaks it without leaving the VIN alphabet.
+  assert(vinValid('1M8GDM9AXKP042788'), 'known-good VIN');
+  for (let i = 0; i < 300; i++) {
+    const v = generateVIN();
+    assert(vinValid(v), `VIN checksum: ${v}`);
+    const bad = breakChecksum(v);
+    assert(/^[A-HJ-NPR-Z0-9]{17}$/.test(bad) && !vinValid(bad), `bad VIN still valid or mis-shaped: ${bad}`);
+  }
   console.log('validators: all self-checks passed');
 }

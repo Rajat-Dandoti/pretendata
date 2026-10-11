@@ -4,6 +4,7 @@ import { AVAILABLE_COLUMNS } from '../data/schema';
 
 export type JsonStructure = 'flat' | 'grouped' | 'semantic' | 'deep';
 export const DEFAULT_DEPTH = 3;
+export const MAX_DEPTH = 10;
 
 const CATEGORY_OF = new Map(AVAILABLE_COLUMNS.map(c => [c.id, c.category]));
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_');
@@ -58,7 +59,8 @@ export function nestRow(row: Record<string, any>, structure: JsonStructure, dept
   switch (structure) {
     case 'grouped':  return nestByPath(row, groupedPath);
     case 'semantic': return nestByPath(row, semanticPath);
-    case 'deep':     return nestDeep(row, Math.max(1, depth));
+    // Clamped here, not per caller: `depth` reaches this straight from the API body.
+    case 'deep':     return nestDeep(row, Math.min(MAX_DEPTH, Math.max(1, Math.floor(depth) || 1)));
     default:         return row;
   }
 }
@@ -76,5 +78,8 @@ export function _selfCheck() {
   const deep = nestRow(row, 'deep', 3) as any;
   if (deep.data.attributes.record.firstName !== 'A') throw new Error('FAIL: deep nesting');
   if (nestRow(row, 'flat') !== row) throw new Error('FAIL: flat passthrough');
+  // depth is clamped to 1..MAX_DEPTH whatever a caller sends (huge, fractional, garbage).
+  const levels = (d: any) => { let n = 0; for (let o = nestRow(row, 'deep', d) as any; !('firstName' in o); o = Object.values(o)[0]) n++; return n; };
+  if (levels(1e9) !== MAX_DEPTH || levels(2.9) !== 2 || levels(-5) !== 1 || levels('x') !== 1) throw new Error('FAIL: deep depth clamp');
   console.log('nesting: all self-checks passed');
 }

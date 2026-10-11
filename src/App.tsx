@@ -341,6 +341,7 @@ export default function App() {
           if (config.rowCount) setRowCount(config.rowCount);
           if (config.sparsity !== undefined) setSparsity(config.sparsity);
           setSelectedPreset(config.presetName || 'Custom');
+          setGeneratedData([]); // column shape changed — same reason as handleToggleColumn
         }
       } catch (err) {
         alert("Invalid preset file.");

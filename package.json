@@ -16,6 +16,7 @@
     "dev:all": "tsx watch server/index.ts & vite --port=3000 --host=0.0.0.0; kill $!"
   },
   "dependencies": {
+    "@faker-js/faker": "^10.3.0",
     "@hono/node-server": "^2.0.6",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
@@ -28,12 +29,10 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
-    "@faker-js/faker": "^10.3.0",
     "@types/node": "^22.14.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/streamsaver": "^2.0.5",
-    "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

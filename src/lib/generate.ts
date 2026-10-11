@@ -1,8 +1,9 @@
 // Shared generation core — pure TS, runs in the browser worker AND the Node API server.
 // Keep this free of DOM/worker globals so both consumers can import it.
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
-import { applySeed } from './seed';
+import { applySeed, SEED_REF_DATE } from './seed';
 import { getFaker, resolveLocale, LocaleId } from './locale';
+import { luhnValid, vinValid } from './validators';
 
 export function csvEscape(val: any): string {
   if (val === null || val === undefined) return '';
@@ -19,12 +20,16 @@ export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): 
   const rowLocale = resolveLocale(locale);
   const f = getFaker(rowLocale);
   const dob = f.date.birthdate({ min: 18, max: 80, mode: 'age' });
+  // Age as of faker's reference date (the seed's fixed "now", else the clock), in UTC like
+  // the dob column: one year less until this year's birthday has passed.
+  const ref = f.defaultRefDate();
+  const monthDay = (d: Date) => d.getUTCMonth() * 100 + d.getUTCDate();
   const fctx: any = {
     firstName: f.person.firstName(),
     lastName: f.person.lastName(),
     gender: f.person.sex(),
     dob,
-    age: new Date().getFullYear() - dob.getFullYear(),
+    age: ref.getUTCFullYear() - dob.getUTCFullYear() - (monthDay(ref) < monthDay(dob) ? 1 : 0),
     faker: f,
     locale: rowLocale,
   };
@@ -122,5 +127,22 @@ export function _selfCheck() {
   if (generateChunkText(cols, { ...co, chunk: 3 }) !== k3) throw new Error('FAIL: chunk determinism');
   if (k3 === k4) throw new Error('FAIL: chunks must differ');
   if (k3.split('\n').length !== 5 || !k3.endsWith('\n')) throw new Error('FAIL: chunk row count');
+  // seeded dates hang off SEED_REF_DATE, never the wall clock; age agrees with dob.
+  const ref = SEED_REF_DATE.getTime();
+  const DAY = 86_400_000;
+  for (const r of generateRows({ columnIds: ['dob', 'age', 'createdAt', 'hireDate', 'graduationYear'], rowCount: 500, seed: 3 })) {
+    const made = Date.parse(r.createdAt);
+    if (made > ref || made < ref - 30 * DAY) throw new Error(`FAIL: seeded createdAt off the reference date: ${r.createdAt}`);
+    if (Date.parse(r.hireDate) > ref || r.graduationYear < 2026 || r.graduationYear > 2030) throw new Error('FAIL: seeded hireDate/graduationYear off the reference date');
+    const dob = new Date(r.dob);
+    const birthdayThisYear = Date.UTC(dob.getUTCFullYear() + r.age, dob.getUTCMonth(), dob.getUTCDate());
+    const birthdayNextYear = Date.UTC(dob.getUTCFullYear() + r.age + 1, dob.getUTCMonth(), dob.getUTCDate());
+    if (birthdayThisYear > ref || birthdayNextYear <= ref || r.age < 18 || r.age > 80) throw new Error(`FAIL: age ${r.age} vs dob ${r.dob}`);
+  }
+  // checksum columns hold their contract; near-miss columns never accidentally pass.
+  for (const r of generateRows({ columnIds: ['creditCard', 'creditCard_invalid', 'vin', 'vin_invalid'], rowCount: 2000, seed: 5 })) {
+    if (!luhnValid(r.creditCard) || luhnValid(r.creditCard_invalid)) throw new Error(`FAIL: credit card Luhn: ${r.creditCard} / ${r.creditCard_invalid}`);
+    if (!vinValid(r.vin) || vinValid(r.vin_invalid)) throw new Error(`FAIL: VIN checksum: ${r.vin} / ${r.vin_invalid}`);
+  }
   console.log('generate: all self-checks passed');
 }

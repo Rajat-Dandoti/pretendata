@@ -19,12 +19,15 @@ export interface ShareState {
   l?: LocaleId;       // locale (added v1.1, optional for backward-compat)
 }
 
+// UTF-8 bytes through btoa/atob, which only take Latin-1: an imported preset can be named anything.
 function b64urlEncode(s: string): string {
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const bin = String.fromCharCode(...new TextEncoder().encode(s));
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 function b64urlDecode(s: string): string {
   const pad = s.length % 4 === 0 ? '' : '='.repeat(4 - (s.length % 4));
-  return atob(s.replace(/-/g, '+').replace(/_/g, '/') + pad);
+  const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/') + pad);
+  return new TextDecoder().decode(Uint8Array.from(bin, ch => ch.charCodeAt(0)));
 }
 
 export function encode(state: ShareState): string {
@@ -53,6 +56,9 @@ export function _selfCheck() {
   const d = decode(encode(s));
   if (!d || d.p !== s.p || d.c.length !== 2 || d.r !== 500) {
     throw new Error('share self-check: round-trip failed');
+  }
+  if (decode(encode({ ...s, p: 'Kunden – Österreich ✓' }))?.p !== 'Kunden – Österreich ✓') {
+    throw new Error('share self-check: non-Latin-1 preset name failed');
   }
   if (decode('') !== null || decode('not-base64!!') !== null) {
     throw new Error('share self-check: bad input should return null');

@@ -147,7 +147,7 @@ Individually low-risk; re-identify in combination.
 | Job Title / Dept | `jobTitle` `department` | — | free-form | Faker |
 | Major / University | `major` `university` | — | free-form | Faker job-area / `University of <state>` |
 | GSTIN | `gstin` | IN | **mod-36** | State + PAN + entity + `Z` + base-36 check |
-| VIN | `vin` | — | **vin-checksum** | Faker (checksum-valid) |
+| VIN | `vin` | — | **vin-checksum** | Faker shape; position-9 check digit computed (transliterate, weight, mod 11, 10 → `X`) |
 | IMEI | `imei` | — | **luhn** | 14 digits + Luhn check |
 
 ## Statistical
@@ -157,7 +157,7 @@ Gaussian-distributed realistic values via `generateGaussianInt/Float(min, max, s
 | Column | ID | Range (skew) |
 |---|---|---|
 | Salary | `salary` | 30k–200k (1.5) |
-| Age | `age` | row-consistent with DOB |
+| Age | `age` | 18–80, completed years as of the reference date (today, or 2026-01-01 UTC under a seed); row-consistent with DOB |
 | Purchase Count | `purchaseCount` | 0–500 (1.2) |
 | Account Balance | `accountBalance` | 0–50k (1.3) |
 | Credit Score | `creditScore` | 300–850 (0.9) |
@@ -195,6 +195,8 @@ detector must NOT fire. These measure false-positive rates. Validation = `near-m
 
 `breakChecksum()` mutates the last alphanumeric char (`+1 mod 10` for digits, `X→0` for VIN,
 `+1 mod 26` for letters). Every checksum here weights the last char, so one bump always invalidates it.
+Each near-miss starts from a **valid** value of its origin (the credit card from a Luhn-valid Faker
+card, in the same dashed/plain shapes) — bumping a random number would leave ~10% valid by chance.
 
 | Column | ID | Origin |
 |---|---|---|

@@ -57,15 +57,16 @@ function resolveGenerate(body: GenBody): { error: string } | { columnIds: string
     if (!PRESETS[body.preset]) return { error: `unknown preset: ${body.preset}` };
     columnIds = PRESETS[body.preset];
   }
-  if (!columnIds || columnIds.length === 0) return { error: 'columnIds or preset required' };
+  if (!Array.isArray(columnIds) || columnIds.length === 0) return { error: 'columnIds (array) or preset required' };
   const unknown = columnIds.filter(id => !KNOWN_IDS.has(id));
   if (unknown.length) return { error: `unknown columnIds: ${unknown.join(', ')}` };
 
   const rowCount = Number(body.rowCount ?? 100);
-  if (!Number.isFinite(rowCount) || rowCount < 1) return { error: 'rowCount must be >= 1' };
+  if (!Number.isInteger(rowCount) || rowCount < 1) return { error: 'rowCount must be an integer >= 1' };
   if (rowCount > MAX_ROWS) return { error: `rowCount exceeds max ${MAX_ROWS}` };
   const sparsity = Number(body.sparsity ?? 0);
   if (!Number.isFinite(sparsity) || sparsity < 0 || sparsity > 100) return { error: 'sparsity must be 0–100' };
+  if (body.seed != null && !Number.isFinite(body.seed)) return { error: 'seed must be a number' };
 
   // Region-focused presets carry a locale, same as the UI. An explicit `locale` still wins.
   const locale = body.locale ?? (body.preset ? PRESET_LOCALES[body.preset] : undefined);
@@ -77,6 +78,7 @@ function resolveGenerate(body: GenBody): { error: string } | { columnIds: string
 app.post('/api/generate', async (c) => {
   let body: GenBody;
   try { body = await c.req.json(); } catch { return c.json({ error: 'invalid JSON body' }, 400); }
+  if (!body || typeof body !== 'object') return c.json({ error: 'body must be a JSON object' }, 400);
   const res = resolveGenerate(body);
   if ('error' in res) return c.json({ error: res.error }, 400);
 

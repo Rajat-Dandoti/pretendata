@@ -13,8 +13,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 
 ## Features
 
-- **11 privacy categories**, colour-coded by sensitivity — PII, PHI, PCI, Secrets, Biometric, Network,
-  Quasi-Identifier, Statistical, Masked, Non-Sensitive, and **DLP-Negative** (checksum-broken false-positive controls).
+- **12 privacy categories**, colour-coded by sensitivity — PII, PHI, PCI, Secrets, Biometric, Network,
+  Quasi-Identifier, Statistical, Masked, Non-Sensitive, **DLP-Negative** (checksum-broken false-positive
+  controls), and **Chaos** (malformed / hostile values).
 - **Checksum-valid identifiers** so real detectors actually match — Aadhaar (Verhoeff), IBAN (mod-97),
   IMEI/NPI (Luhn), NHS (mod-11), GSTIN (mod-36), VIN, EAN-13, ISIN, Saudi Iqama (Luhn), and more.
 - **Near-miss / DLP-Negative controls** — the same identifiers with the check digit deliberately broken,
@@ -55,6 +56,9 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
   whose dev server reloads the page when it reconnects.
 - **Seeds** — streamed output is seeded per 5,000-row chunk, so the same seed and row count always
   reproduce the same file. Seeded files above 100k rows made before this scheme do not match.
+- **Seeded dates** — with a seed, relative dates (date of birth, age, created-at, hire date, last
+  login, graduation year) are measured from a fixed reference date, 2026-01-01 UTC, not today, so
+  the output is the same on any day. Leave the seed blank for dates relative to now.
 
 ## Scripts
 
@@ -91,7 +95,8 @@ SPA from `dist/`.
 - `GET /api/columns` — column catalog (id, name, category, region, validation, framework tags) + colors.
 - `GET /api/presets` — named column bundles.
 - `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, format?, structure?, nestingDepth? }`.
-  `format` ∈ `json` (default) · `csv` · `ndjson`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`.
+  `format` ∈ `json` (default) · `csv` · `ndjson`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`;
+  `rowCount` is an integer up to 100,000; `nestingDepth` is clamped to 1–10.
 
 ```bash
 curl -X POST localhost:8787/api/generate -H 'content-type: application/json' \

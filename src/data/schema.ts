@@ -139,7 +139,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'deviceType', name: 'Device Type', category: 'Non-Sensitive', generate: () => faker.helpers.arrayElement(['Mobile', 'Desktop', 'Tablet']), defaultSelected: false },
   { id: 'storeLocation', name: 'Store Location', category: 'Non-Sensitive', generate: () => faker.location.state(), defaultSelected: false },
   { id: 'hireDate', name: 'Hire Date', category: 'Non-Sensitive', generate: () => faker.date.past({ years: 10 }).toISOString().split('T')[0], defaultSelected: false },
-  { id: 'graduationYear', name: 'Graduation Year', category: 'Non-Sensitive', generate: () => faker.date.future({ years: 4 }).getFullYear(), defaultSelected: false },
+  { id: 'graduationYear', name: 'Graduation Year', category: 'Non-Sensitive', generate: () => faker.date.future({ years: 4 }).getUTCFullYear(), defaultSelected: false },
   { id: 'lastLogin', name: 'Last Login', category: 'Non-Sensitive', generate: () => faker.date.recent({ days: 5 }).toISOString(), defaultSelected: false },
   { id: 'subscriptionTier', name: 'Subscription Tier', category: 'Non-Sensitive', generate: () => faker.helpers.arrayElement(['Free', 'Basic', 'Premium', 'Enterprise']), defaultSelected: false },
   { id: 'employeeId', name: 'Employee ID', category: 'Non-Sensitive', generate: () => `EMP-${faker.string.numeric(5)}`, defaultSelected: false },
@@ -177,7 +177,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   // Near-miss siblings: regex-shaped, checksum deliberately broken. Category is DLP-Negative because
   // a well-behaved DLP should NOT flag these — they're the false-positive control set.
   { id: 'aadhaar_invalid',    name: 'Aadhaar (near-miss)',     category: 'DLP-Negative', generate: () => breakChecksum(generateAadhaar()),    defaultSelected: false },
-  { id: 'creditCard_invalid', name: 'Credit Card (near-miss)', category: 'DLP-Negative', generate: () => breakChecksum(String(Math.floor(1e15 + Math.random()*9e15))), defaultSelected: false },
+  { id: 'creditCard_invalid', name: 'Credit Card (near-miss)', category: 'DLP-Negative', generate: () => breakChecksum(faker.finance.creditCardNumber()), defaultSelected: false },
   { id: 'iban_invalid',       name: 'IBAN (near-miss)',        category: 'DLP-Negative', generate: () => breakChecksum(generateIBAN()),       defaultSelected: false },
   { id: 'npi_invalid',        name: 'NPI (near-miss)',         category: 'DLP-Negative', generate: () => breakChecksum(generateNPI()),        defaultSelected: false },
   { id: 'nhsNumber_invalid',  name: 'NHS Number (near-miss)',  category: 'DLP-Negative', generate: () => breakChecksum(generateNHSNumber()),  defaultSelected: false },
