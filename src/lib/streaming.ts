@@ -2,6 +2,7 @@ import type { LocaleId } from './locale';
 import type { Formatting } from './variants';
 import type { Doc, TextOptions } from './text';
 import type { Manifest } from './manifest';
+import { newWorker } from './workerFactory';
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { csvEscape, generateChunkText, headersFor, HeaderMode, sqlCreateTable, StreamFormat, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
 import { applySeed } from './seed';
@@ -40,10 +41,6 @@ export interface MemoryOptions {
 
 export function isStreamingSupported(): boolean {
   return typeof window !== 'undefined' && 'showSaveFilePicker' in window;
-}
-
-function newWorker(): Worker {
-  return new Worker(new URL('../workers/generate.worker.ts', import.meta.url), { type: 'module' });
 }
 
 function wireAbort(worker: Worker, signal?: AbortSignal): () => void {
@@ -168,6 +165,10 @@ async function openSink(suggestedName: string, format: StreamFormat, gzip: boole
       // reopened). Let it land first, or the reopened swap file is never closed.
       close: () => inFlight.catch(() => {}).then(() => writable.close()),
     };
+  }
+  // The fallback downloads through a service worker, which a page opened from a file cannot register.
+  if (location.protocol === 'file:') {
+    throw new Error('Opened from a file, large datasets need a browser with the File System Access API (Chrome or Edge). Up to 100,000 rows works in any browser.');
   }
   // Imported on demand: only browsers without the File System Access API need it, and it
   // touches `document` at import, which would keep this module out of `npm test`.

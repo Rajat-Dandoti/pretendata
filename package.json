@@ -21,7 +21,8 @@
     "pin-seed": "tsx src/lib/_seedcontract.ts",
     "cli": "tsx bin/pretendata.ts",
     "build:cli": "vite build -c vite.cli.config.ts",
-    "build:reference": "tsx scripts/build-reference.ts"
+    "build:reference": "tsx scripts/build-reference.ts",
+    "build:offline": "vite build -c vite.offline.config.ts && tsx scripts/inline-offline.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",

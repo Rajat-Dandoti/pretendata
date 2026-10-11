@@ -68,7 +68,7 @@ await send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPa
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const page = {
-  base, downloads, errors, external, dialogs, out: OUT,
+  base, downloads, errors, external, dialogs, out: OUT, repo: REPO,
   async goto(path = '/') { await send('Page.navigate', { url: base + path }); await sleep(300); await page.waitFor('document.readyState === "complete" && (!document.querySelector("#root") || !!document.querySelector("#root").firstChild)'); },
   async eval(expr) { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }); if (r.exceptionDetails) throw new Error('eval failed: ' + (r.exceptionDetails.exception?.description ?? r.exceptionDetails.text) + '\n  in: ' + expr.slice(0, 200)); return r.result.value; },
   async waitFor(expr, ms = 15000) { const t = Date.now(); while (Date.now() - t < ms) { if (await page.eval(`!!(${expr})`).catch(() => false)) return; await sleep(100); } throw new Error('timeout waiting for: ' + expr); },
@@ -93,6 +93,7 @@ const page = {
   async screenshot(name) { const { data } = await send('Page.captureScreenshot', { format: 'png' }); const f = join(OUT, name); writeFileSync(f, Buffer.from(data, 'base64')); return f; },
   async viewport(width, height) { await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 700 }); await sleep(200); },
   async download(trigger, ms = 20000) { const before = downloadsDone.length; await trigger(); const t = Date.now(); while (downloadsDone.length === before) { if (Date.now() - t > ms) throw new Error('download did not complete'); await sleep(100); } await sleep(100); const guid = downloadsDone.at(-1); return { path: join(downloads, guid), name: downloadNames.get(guid) }; },
+  async gotoUrl(url) { await send('Page.navigate', { url }); await sleep(500); await page.waitFor('document.readyState === "complete" && !!document.querySelector("#root")?.firstChild', 30000); },
   async reload() { await send('Page.reload'); await sleep(400); await page.waitFor('document.readyState === "complete" && !!document.querySelector("#root")?.firstChild'); },
   async init(source) { await send('Page.addScriptToEvaluateOnNewDocument', { source }); },
   sleep,

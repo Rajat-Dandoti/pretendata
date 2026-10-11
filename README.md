@@ -131,10 +131,18 @@ are generated:
 | `npm test` | Self-checks: checksum round-trips, format asserts, the pinned seed contract, the streaming writer, the answer key, the scorecard, and that COLUMNS.md covers every column |
 | `npm run cli -- …` | The command-line tool (see below) |
 | `npm run build:cli` | Bundle the command-line tool into `dist-cli/pretendata.js` |
+| `npm run build:offline` | Builds the single-file offline version, `dist-offline/pretendata.html` |
 | `npm run build:reference` | Writes a static page per column into `dist/reference/` (format, check, examples). Opt-in; not part of `npm run build` |
 | `npm run pin-seed` | Records the seeded output of new columns in `src/lib/seed-contract.json`. Refuses to overwrite a changed column until `GENERATOR_VERSION` is bumped |
 | `npm run smoke` | Builds, then drives the real app in headless Chrome: generate, export, both large-file paths, keyboard use, answer key, scorecard. Needs Chrome; set `CHROME` to its path if it is not found |
 | `npm run server` | Optional API server (see below) |
+
+## Offline single file
+
+`npm run build:offline` writes `dist-offline/pretendata.html`: the whole app in one 4 MB file, with the
+generation worker embedded. Copy it to a machine with no network and open it in a browser. Everything
+works from the file except one thing: datasets above 100,000 rows need Chrome or Edge there, because
+the download fallback other browsers use relies on a service worker, which a local file cannot register.
 
 ## Reference pages
 

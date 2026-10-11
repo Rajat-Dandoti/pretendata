@@ -1,8 +1,11 @@
 // Runs every browser smoke scenario, and the Node-side checks that rebuild the browser's
 // downloads from their answer keys. usage: npm run smoke
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 
 const steps = [['baseline'], ['stream'], ['hygiene'], ['answerkey', 'answerkey.verify.mts'], ['scorecard'], ['knobs', 'knobs.verify.mts'], ['identify'], ['formatting', 'formatting.verify.mts'], ['text'], ['fixture'], ['maskcheck'], ['benchmark'], ['picker'], ['tables']];
+// The single-file offline build is optional; test it when it has been built (npm run build:offline).
+if (existsSync(new URL('../dist-offline/pretendata.html', import.meta.url))) steps.push(['offline']);
 const failed = [];
 for (const [scenario, verify] of steps) {
   console.log(`\n== ${scenario}`);
