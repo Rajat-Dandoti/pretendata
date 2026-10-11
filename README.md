@@ -31,7 +31,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   locale support, shareable config links, and large-dataset streaming (up to 100M rows) to a single
   file in any browser.
 - Responsive layout — off-canvas sidebars on mobile, collapsible panels on desktop.
-- Export to **CSV / JSON / NDJSON** with an optional DLP manifest sidecar.
+- Export to **CSV / JSON / NDJSON** with an optional DLP manifest sidecar (zipped with the data; a
+  separate `.manifest.json` for streamed runs). CSV files start with a UTF-8 BOM so Excel reads
+  non-ASCII names correctly.
 
 ## Quick start
 
@@ -68,7 +70,7 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
 | `npm run build` | Production build → `dist/` |
 | `npm run preview` | Preview the production build |
 | `npm run lint` | TypeScript type-check (`tsc --noEmit`) |
-| `npm test` | Generator/validator self-checks (checksum round-trips, format asserts) |
+| `npm test` | Self-checks: checksum round-trips, format asserts, seed reproducibility, the streaming writer, and that COLUMNS.md covers every column |
 | `npm run server` | Optional API server (see below) |
 
 ## Deploy (free, static)

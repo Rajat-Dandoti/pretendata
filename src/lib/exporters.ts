@@ -2,9 +2,7 @@ import { AVAILABLE_COLUMNS } from '../data/schema';
 import { buildManifest, manifestFilename, RunMeta } from './manifest';
 import { nestRows, JsonStructure, DEFAULT_DEPTH } from './nesting';
 import { makeZip } from './zip';
-import { csvEscape } from './generate';
-
-const UTF8_BOM = '﻿';
+import { rowsToCSV, UTF8_BOM } from './generate';
 
 /**
  * Centralized export utilities — extracted from App.tsx to keep the main component clean.
@@ -52,16 +50,15 @@ function shipWithOptionalManifest(
 export function exportCSV(data: any[], selectedColumns: Set<string>, meta?: RunMeta) {
   if (data.length === 0) return;
   const activeCols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
-  const headers = activeCols.map(c => csvEscape(c.name)).join(',');
-  const rows = data.map(row => activeCols.map(c => csvEscape(row[c.id])).join(','));
-  const csv = UTF8_BOM + [headers, ...rows].join('\n');
-  shipWithOptionalManifest('privacy_test_data.csv', csv, 'text/csv;charset=utf-8', selectedColumns, meta);
+  // Same bytes as the streamed CSV: BOM, header, one line per row, trailing newline.
+  const csv = UTF8_BOM + rowsToCSV(data, activeCols);
+  shipWithOptionalManifest('pretendata.csv', csv, 'text/csv;charset=utf-8', selectedColumns, meta);
 }
 
 export function exportJSON(data: any[], selectedColumns?: Set<string>, meta?: RunMeta, structure: JsonStructure = 'flat', depth = DEFAULT_DEPTH) {
   if (data.length === 0) return;
   const json = JSON.stringify(nestRows(data, structure, depth), null, 2);
-  const filename = 'privacy_test_data.json';
+  const filename = 'pretendata.json';
   if (meta && selectedColumns) {
     shipWithOptionalManifest(filename, json, 'application/json', selectedColumns, meta);
   } else {
@@ -78,6 +75,6 @@ export function exportPresetConfig(selectedPreset: string, selectedColumns: Set<
   };
   downloadBlob(
     new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' }),
-    `privacy_preset_${Date.now()}.json`
+    `pretendata_preset_${Date.now()}.json`
   );
 }

@@ -32,6 +32,17 @@ export function resolveLocale(locale: LocaleId): Exclude<LocaleId, 'mix'> {
   return locale;
 }
 
+// Faker's own `person.sex()` is localised but drawn independently of the first name, so the
+// gender column is built from the sex the name was picked for. Labels match what it emitted.
+const SEX_LABELS: Partial<Record<Exclude<LocaleId, 'mix'>, Record<'female' | 'male', string>>> = {
+  de: { female: 'weiblich', male: 'männlich' },
+  fr: { female: 'Femme', male: 'Homme' },
+  ja: { female: '女性', male: '男性' },
+};
+export function sexLabel(locale: Exclude<LocaleId, 'mix'>, sex: 'female' | 'male'): string {
+  return SEX_LABELS[locale]?.[sex] ?? sex;
+}
+
 /** Returns the Faker instance for a locale. For 'mix', picks one at random per call. */
 export function getFaker(locale: LocaleId): Faker {
   return FAKERS[resolveLocale(locale)] ?? faker;

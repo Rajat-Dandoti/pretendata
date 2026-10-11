@@ -18,7 +18,8 @@ const SEMANTIC_PATHS: Record<string, string> = {
   city: 'address.city', zipCode: 'address.zip', storeLocation: 'address.state', geoCoordinates: 'address.geo',
   ssn: 'identifiers.ssn', aadhaar: 'identifiers.aadhaar', pan: 'identifiers.pan', voterId: 'identifiers.voterId',
   iqama: 'identifiers.iqama', ein: 'identifiers.ein', passportNumber: 'identifiers.passport',
-  driversLicense: 'identifiers.driversLicense', dlIndia: 'identifiers.driversLicense',
+  driversLicense: 'identifiers.driversLicense', dlIndia: 'identifiers.driversLicenseIN', dlUS: 'identifiers.driversLicenseUS',
+  dlUK: 'identifiers.driversLicenseUK', dlGermany: 'identifiers.driversLicenseDE',
   creditCard: 'financial.card.number', cvv: 'financial.card.cvv', tokenizedCard: 'financial.card.token',
   iban: 'financial.iban', accountNumber: 'financial.account', routingNumber: 'financial.routing',
   ifsc: 'financial.ifsc', salary: 'financial.salary', creditScore: 'financial.creditScore',
@@ -78,6 +79,10 @@ export function _selfCheck() {
   const deep = nestRow(row, 'deep', 3) as any;
   if (deep.data.attributes.record.firstName !== 'A') throw new Error('FAIL: deep nesting');
   if (nestRow(row, 'flat') !== row) throw new Error('FAIL: flat passthrough');
+  // no two columns may land on the same path (or inside another's leaf) — the later one would silently vanish.
+  const paths = AVAILABLE_COLUMNS.map(c => semanticPath(c.id));
+  const clash = paths.find((p, i) => paths.some((q, j) => i !== j && (q === p || q.startsWith(p + '.'))));
+  if (clash) throw new Error(`FAIL: semantic path collision at ${clash}`);
   // depth is clamped to 1..MAX_DEPTH whatever a caller sends (huge, fractional, garbage).
   const levels = (d: any) => { let n = 0; for (let o = nestRow(row, 'deep', d) as any; !('firstName' in o); o = Object.values(o)[0]) n++; return n; };
   if (levels(1e9) !== MAX_DEPTH || levels(2.9) !== 2 || levels(-5) !== 1 || levels('x') !== 1) throw new Error('FAIL: deep depth clamp');

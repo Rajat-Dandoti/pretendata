@@ -46,7 +46,7 @@ export function buildManifest(selectedColumnIds: Iterable<string>, meta: RunMeta
   return {
     version: MANIFEST_VERSION,
     generatedAt: new Date().toISOString(),
-    toolName: 'privacy-test-data-generator',
+    toolName: 'pretendata',
     ...meta,
     columns: AVAILABLE_COLUMNS.filter(c => ids.has(c.id)).map(toManifestColumn),
   };

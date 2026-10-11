@@ -27,6 +27,7 @@ the value. Ordered loudest → quietest.
 | **Masked** | purple | Already redacted/tokenized | Should NOT fire (verify masking held) |
 | **Non-Sensitive** | green | Neutral business IDs | Should NOT fire |
 | **DLP-Negative** | slate | Regex-shaped but checksum **deliberately broken** | Should NOT fire — measures false positives |
+| **Chaos** | yellow | Deliberately malformed / hostile values | Should NOT fire — stresses parsers, CSV escaping and the engine itself |
 
 ---
 
@@ -38,7 +39,7 @@ Emitted into the export **manifest sidecar** so a test harness knows what guaran
 |---|---|
 | `free-form` | No shape contract (names, lorem, job titles). Default when unset. |
 | `pattern-only` | Regex-shaped, **no checksum** (email, IP, PAN format, API keys). |
-| `luhn` | Luhn mod-10 (credit card, IMEI). |
+| `luhn` | Luhn mod-10 (credit card, IMEI, Iqama). |
 | `verhoeff` | Verhoeff (Aadhaar). |
 | `mod-97` | ISO 7064 mod-97-10 (IBAN). |
 | `mod-36` | GSTIN base-36 weighted. |
@@ -47,6 +48,7 @@ Emitted into the export **manifest sidecar** so a test harness knows what guaran
 | `vin-checksum` | VIN transliteration mod-11. |
 | `npi-luhn` | Luhn over an `80840`-prefixed body. |
 | `near-miss-of:<id>` | Regex-shaped sibling of `<id>` whose checksum is broken. |
+| `chaos` | Intentionally malformed / hostile; no shape contract by design. |
 
 ---
 
@@ -54,13 +56,16 @@ Emitted into the export **manifest sidecar** so a test harness knows what guaran
 
 | Column | ID | Region | Validation | Shape / Algorithm |
 |---|---|---|---|---|
-| First / Last Name | `firstName` `lastName` | locale | free-form | Faker person, locale-aware |
+| First / Last Name | `firstName` `lastName` | locale | free-form | Faker person, locale-aware; first name comes from the list for the row's Gender |
 | Email | `email` | — | pattern-only | Faker, derived from first/last name |
 | Phone (mobile) | `phone` | locale | pattern-only | Real mobile prefixes per locale, random local format. IN: 10 digits starting 6–9 as `+91 98765 43210` / `+91…` / `91…` / `098765 43210` / bare. US: NANPA `(NXX) NXX-XXXX`. DE 015x/016x/017x · ES 6xx/7xx · FR 06/07 · JP 070/080/090 |
 | SSN | `ssn` | US | pattern-only | `AAA-GG-SSSS`; area ≠ 000/666/900-999, group ≠ 00, serial ≠ 0000 |
 | Aadhaar | `aadhaar` | IN | **verhoeff** | 12 digits, first 2–9, Verhoeff check digit |
 | PAN | `pan` | IN | pattern-only | `AAAAA9999A`; 4th char = entity type, 5th = surname initial |
 | EIN | `ein` | US | pattern-only | `NN-NNNNNNN`; prefix from valid IRS campus list |
+| UPI ID | `upiId` | IN | pattern-only | `local@handle`; local = 10-digit mobile or a username, handle from real PSP list (`ybl`, `oksbi`, `paytm`, …) |
+| Voter ID (EPIC) | `voterId` | IN | pattern-only | 3 letters + 7 digits |
+| Iqama | `iqama` | SA | **luhn** | 10 digits, prefix `2` (resident), Luhn check digit |
 | Driver's Licence (IN) | `dlIndia` | IN | pattern-only | `SS## YYYYNNNNNNN` (state + RTO + year + serial) |
 | Driver's Licence (US) | `dlUS` | US | pattern-only | `A#######` (CA format) |
 | Driver's Licence (UK) | `dlUK` | UK | pattern-only | 16 chars: `AAAAA NNNNNN AA N AA` (DVLA shape) |
@@ -81,17 +86,19 @@ Emitted into the export **manifest sidecar** so a test harness knows what guaran
 | Medical Notes | `medicalNotes` | — | free-form | Faker sentence |
 | NPI | `npi` | US | **npi-luhn** | 10 digits; Luhn valid over `80840`+body; body starts 1/2 |
 | DEA Number | `dea` | US | pattern-only | 2 letters + 7 digits; check = `(d1+d3+d5) + 2·(d2+d4+d6)` mod 10 |
-| NHS Number | `nhsNumber` | UK | **mod-11** | 9 digits + mod-11 check (weights 10..2); regenerate if check == 10 |
+| NHS Number | `nhsNumber` | UK | **mod-11** | 9 digits + mod-11 check (weights 10..2), written `NNN NNN NNNN`; regenerate if check == 10 |
+| ABHA Health ID | `abha` | IN | pattern-only | 14 digits (checksum unconfirmed, so none claimed) |
 
 ## PCI
 
 | Column | ID | Region | Validation | Shape / Algorithm |
 |---|---|---|---|---|
-| Credit Card | `creditCard` | — | luhn | Faker (Luhn-valid) |
+| Credit Card | `creditCard` | — | luhn | Faker (Luhn-valid); 13 bare digits or dashed `4-4-4-4` / `4-6-4` / `4-6-5` groups |
 | CVV | `cvv` | — | pattern-only | Faker 3-digit |
 | Routing Number | `routingNumber` | US | pattern-only | Faker ABA |
 | Account Number | `accountNumber` | — | pattern-only | Faker 10-digit |
-| IBAN | `iban` | INTL | **mod-97** | Country + 2 check digits + BBAN; `98 − mod97(bban+country+00)` |
+| IBAN | `iban` | INTL | **mod-97** | Country + 2 check digits + BBAN; `98 − mod97(bban+country+00)`. Registry length and layout per country: DE 22, FR 27, ES 24 (digits); GB 22 and NL 18 (4-letter bank code + digits); IT 27 (CIN letter + digits). National check digits inside the BBAN are not computed |
+| IFSC Code | `ifsc` | IN | pattern-only | 4-letter bank code + `0` + 6 digits |
 
 ## Secrets / Credentials
 
@@ -100,12 +107,12 @@ prefix/shape is the signature; none carry a checksum we validate.
 
 | Column | ID | Validation | Shape |
 |---|---|---|---|
-| AWS Access Key ID | `awsAccessKey` | pattern-only | `AKIA` + 16 upper alphanumeric |
+| AWS Access Key ID | `awsAccessKey` | pattern-only | `AKIA` + 16 base32 chars (`A–Z`, `2–7`) |
 | AWS Secret Access Key | `awsSecretKey` | pattern-only | 40 alphanumeric |
 | GitHub Token | `githubPAT` | pattern-only | `ghp_` + 36 alphanumeric |
 | Stripe Secret Key | `stripeKey` | pattern-only | `sk_live_` + 24 alphanumeric |
 | Google API Key | `googleApiKey` | pattern-only | `AIza` + 35 alphanumeric |
-| JWT | `jwt` | pattern-only | `eyJ…` three base64ish segments joined by `.` |
+| JWT | `jwt` | pattern-only | base64url JSON header (`HS256`) `.` base64url JSON payload (`sub`, `iat`, `exp`) `.` 43-char random signature — decodes, never verifies |
 | Bcrypt Password Hash | `bcryptHash` | pattern-only | `$2b$10$` + 53 alphanumeric |
 | PEM Private Key | `privateKeyPem` | pattern-only | `-----BEGIN RSA PRIVATE KEY-----` block, 2 body lines |
 | Basic-Auth URL | `basicAuthUrl` | pattern-only | `https://user:pass@host` |
@@ -129,7 +136,7 @@ Log-DLP territory beyond the endpoint. Extends the PII IPv4/MAC coverage.
 |---|---|---|---|
 | IPv6 Address | `ipv6Address` | pattern-only | Faker IPv6 |
 | User Agent | `userAgent` | free-form | Faker UA string |
-| Session Cookie | `sessionCookie` | pattern-only | `sid=` + 40-char hex |
+| Session Cookie | `sessionCookie` | pattern-only | `sid=` + 40-char lowercase hex |
 | Internal Hostname | `internalHostname` | free-form | `word-NN.internal.corp` |
 | CIDR Block | `cidrBlock` | pattern-only | `IPv4/8–30` |
 | Geo Coordinates | `geoCoordinates` | free-form | `lat, lng` |
@@ -142,13 +149,14 @@ Individually low-risk; re-identify in combination.
 |---|---|---|---|---|
 | Zip Code | `zipCode` | locale | free-form | Faker |
 | Date of Birth | `dob` | — | free-form | ISO date; **row-consistent** with Age |
-| Gender / Ethnicity | `gender` `ethnicity` | — | free-form | Enum |
+| Gender / Ethnicity | `gender` `ethnicity` | — | free-form | Enum; Gender is **row-consistent** with First Name and labelled in the row's locale |
 | City | `city` | locale | free-form | Faker |
 | Job Title / Dept | `jobTitle` `department` | — | free-form | Faker |
 | Major / University | `major` `university` | — | free-form | Faker job-area / `University of <state>` |
 | GSTIN | `gstin` | IN | **mod-36** | State + PAN + entity + `Z` + base-36 check |
 | VIN | `vin` | — | **vin-checksum** | Faker shape; position-9 check digit computed (transliterate, weight, mod 11, 10 → `X`) |
 | IMEI | `imei` | — | **luhn** | 14 digits + Luhn check |
+| Vehicle Reg | `vehicleRegIndia` | IN | pattern-only | State + 2-digit RTO + 1–2 letters + 4 digits, e.g. `MH12AB1234` |
 
 ## Statistical
 
@@ -183,7 +191,11 @@ Neutral business identifiers.
 
 | Column | ID | Validation | Shape |
 |---|---|---|---|
-| Order / Device / State / dates | various | free-form | Faker |
+| Transaction ID | `transactionId` | free-form | 10 upper alphanumeric |
+| Created At / Last Login | `createdAt` `lastLogin` | free-form | ISO timestamp within the last 30 / 5 days of the reference date |
+| Hire Date / Graduation Year | `hireDate` `graduationYear` | free-form | ISO date in the past 10 years / year in the next 4 |
+| Device Type / Subscription Tier | `deviceType` `subscriptionTier` | free-form | Enum |
+| Store Location | `storeLocation` | free-form | Faker US state |
 | Employee / Student / CRM ID | `employeeId` `studentId` `crmId` | free-form | `EMP-#####` / digits / `CUST-######` |
 | EAN-13 Barcode | `ean13` | **mod-10** | 12 digits + weighted mod-10 check |
 | ISIN | `isin` | **mod-10** | Country + 9 alnum + Luhn on digit-expanded form |
@@ -210,6 +222,23 @@ card, in the same dashed/plain shapes) — bumping a random number would leave ~
 | IMEI (near-miss) | `imei_invalid` | `imei` |
 | EAN-13 (near-miss) | `ean13_invalid` | `ean13` |
 | ISIN (near-miss) | `isin_invalid` | `isin` |
+| Iqama (near-miss) | `iqama_invalid` | `iqama` |
+
+## Chaos (Malformed)
+
+Intentionally hostile values picked from fixed pools (so they reproduce under a seed). They test the
+pipeline — CSV escaping, encodings, parsers — and that a detector neither crashes nor fires on them.
+
+| Column | ID | What it emits |
+|---|---|---|
+| Empty / Blank | `chaosEmpty` | Empty string, spaces, tab, newline |
+| Unicode Stress | `chaosUnicode` | Emoji, RTL scripts, combining marks, zero-width chars, ZWJ sequences |
+| SQL Injection | `chaosSqli` | Classic injection strings (`' OR '1'='1`, `'; DROP TABLE users;--`, …) |
+| XSS / HTML Payload | `chaosXss` | Script/markup payloads, template and JNDI probes |
+| Homoglyph | `chaosHomoglyph` | Brand-like words with Cyrillic look-alike letters |
+| Oversized String | `chaosLong` | 512 × `A` |
+| CSV Breaker | `chaosCsvBreak` | Embedded commas, quotes, newlines, tabs |
+| Numeric Edge | `chaosNumeric` | `007`, `1e309`, `-0`, 30 nines, `0x1F`, `NaN`, … |
 
 ---
 
@@ -217,8 +246,8 @@ card, in the same dashed/plain shapes) — bumping a random number would leave ~
 
 Named column bundles in `PRESETS` (schema.ts). Two families:
 
-**Scenario** — HR / Employees, CRM / Customers, Healthcare / Patients, Education / Students,
-Technical / IT.
+**Scenario** — Common Users, HR / Employees, CRM / Customers, Bank / Fintech, Healthcare / Patients,
+Education / Students, Technical / IT.
 
 **DLP-focused** —
 - `DLP Detection Test` — one of every checksum-valid identifier; everything should fire.
@@ -226,8 +255,9 @@ Technical / IT.
 - `Secrets Leak Test` — all Secrets columns.
 - `App Telemetry` — Network + device/login fields.
 - `Biometric / Special-Category` — the four biometric templates + basic PII.
+- `Chaos / Malformed` — every Chaos column next to a name and an email.
 
-**Region-focused** — India PII, US Healthcare, EU GDPR.
+**Region-focused** — India PII, India Fintech, US Healthcare, EU GDPR Sweep. Each also sets the locale.
 
 ---
 
@@ -238,4 +268,6 @@ Technical / IT.
 3. New checksum? Add the generator + validator to `validators.ts` and an assert to its `_selfCheck()`.
 4. New category? Add it to the `PrivacyCategory` union **and** `CATEGORY_COLORS` — the UI, exports,
    and manifest all read generically, so nothing else changes.
-5. `npm run lint && npm test`.
+5. Document it in this file — `npm test` fails if a column id or preset name is missing here, or if a
+   Column Reference pattern does not match what its column emits.
+6. `npm run lint && npm test`.

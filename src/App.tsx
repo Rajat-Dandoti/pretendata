@@ -281,8 +281,8 @@ export default function App() {
         setGeneratedData([]);
         const meta = buildRunMeta('offline', rowCount);
         setLastRunMeta(meta);
-        setToast(`Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}${includeManifest ? ' · manifest included' : ''}`);
-        if (includeManifest) downloadManifest(`privacy_test_data.${streamFormat}`, selectedColumns, meta);
+        setToast(`Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}${includeManifest ? ' · manifest saved separately' : ''}`);
+        if (includeManifest) downloadManifest(`pretendata.${streamFormat}`, selectedColumns, meta);
       } catch (err: any) {
         if (err?.name !== 'AbortError' && err?.message !== 'Cancelled') {
           alert(err?.message || 'Streaming generation failed.');
@@ -821,7 +821,9 @@ export default function App() {
               <span className="hidden lg:inline">Copy link</span>
             </Button>
             <label
-              title="Bundle a sidecar manifest describing columns/categories/regions next to the data, packed as a zip"
+              title={isLarge
+                ? 'Download a sidecar manifest describing columns/categories/regions as a separate .manifest.json once the stream finishes'
+                : 'Bundle a sidecar manifest describing columns/categories/regions next to the data, packed as a zip'}
               className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
             >
               <input
@@ -830,8 +832,8 @@ export default function App() {
                 onChange={e => setIncludeManifest(e.target.checked)}
                 className="accent-slate-700"
               />
-              <span className="hidden lg:inline">DLP manifest (.zip)</span>
-              <span className="lg:hidden">ZIP</span>
+              <span className="hidden lg:inline">DLP manifest{isLarge ? '' : ' (.zip)'}</span>
+              <span className="lg:hidden">{isLarge ? 'Manifest' : 'ZIP'}</span>
             </label>
             <Button
               size="md"

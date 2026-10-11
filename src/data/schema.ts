@@ -6,7 +6,7 @@ import {
   generateDLGermany, generateVIN, generateIMEI, generateEAN13, generateISIN,
   generateNHSNumber, generateDEA, breakChecksum,
   generateUPI, generateVoterId, generateVehicleRegIndia, generateIFSC, generateABHA, generateIqama,
-  generateMobile,
+  generateMobile, generateJWT,
 } from '../lib/validators';
 import type { LocaleId } from '../lib/locale';
 
@@ -150,12 +150,13 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
 
   // Secrets / Credentials — what secret scanners (Gitleaks, TruffleHog, GitHub scanning) hunt.
   // Pattern-only: each has a distinct vendor prefix/shape; none carry a checksum we validate.
-  { id: 'awsAccessKey',   name: 'AWS Access Key ID',   category: 'Secrets', generate: () => `AKIA${faker.string.alphanumeric({ length: 16, casing: 'upper' })}`, defaultSelected: false },
+  // AWS key IDs are base32 (A–Z, 2–7) after the prefix.
+  { id: 'awsAccessKey',   name: 'AWS Access Key ID',   category: 'Secrets', generate: () => `AKIA${faker.string.fromCharacters('ABCDEFGHIJKLMNOPQRSTUVWXYZ234567', 16)}`, defaultSelected: false },
   { id: 'awsSecretKey',   name: 'AWS Secret Access Key', category: 'Secrets', generate: () => faker.string.alphanumeric({ length: 40 }), defaultSelected: false },
   { id: 'githubPAT',      name: 'GitHub Token',        category: 'Secrets', generate: () => `ghp_${faker.string.alphanumeric({ length: 36 })}`, defaultSelected: false },
   { id: 'stripeKey',      name: 'Stripe Secret Key',   category: 'Secrets', generate: () => `sk_live_${faker.string.alphanumeric({ length: 24 })}`, defaultSelected: false },
   { id: 'googleApiKey',   name: 'Google API Key',      category: 'Secrets', generate: () => `AIza${faker.string.alphanumeric({ length: 35 })}`, defaultSelected: false },
-  { id: 'jwt',            name: 'JWT',                 category: 'Secrets', generate: () => `eyJ${faker.string.alphanumeric({ length: 32 })}.${faker.string.alphanumeric({ length: 40 })}.${faker.string.alphanumeric({ length: 43 })}`, defaultSelected: false },
+  { id: 'jwt',            name: 'JWT',                 category: 'Secrets', generate: () => generateJWT(), defaultSelected: false },
   { id: 'bcryptHash',     name: 'Bcrypt Password Hash', category: 'Secrets', generate: () => `$2b$10$${faker.string.alphanumeric({ length: 53 })}`, defaultSelected: false },
   { id: 'privateKeyPem',  name: 'PEM Private Key',     category: 'Secrets', generate: () => `-----BEGIN RSA PRIVATE KEY-----\n${faker.string.alphanumeric({ length: 64 })}\n${faker.string.alphanumeric({ length: 64 })}\n-----END RSA PRIVATE KEY-----`, defaultSelected: false },
   { id: 'basicAuthUrl',   name: 'Basic-Auth URL',      category: 'Secrets', generate: () => `https://${faker.internet.username().toLowerCase()}:${faker.internet.password({ length: 12 })}@${faker.internet.domainName()}`, defaultSelected: false },
@@ -169,7 +170,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   // Network / Telemetry — log-DLP territory beyond the endpoint. Extends the existing IPv4/MAC coverage.
   { id: 'ipv6Address',     name: 'IPv6 Address',      category: 'Network', generate: () => faker.internet.ipv6(), defaultSelected: false },
   { id: 'userAgent',       name: 'User Agent',        category: 'Network', generate: () => faker.internet.userAgent(), defaultSelected: false },
-  { id: 'sessionCookie',   name: 'Session Cookie',    category: 'Network', generate: () => `sid=${faker.string.hexadecimal({ length: 40, prefix: '' })}`, defaultSelected: false },
+  { id: 'sessionCookie',   name: 'Session Cookie',    category: 'Network', generate: () => `sid=${faker.string.hexadecimal({ length: 40, casing: 'lower', prefix: '' })}`, defaultSelected: false },
   { id: 'internalHostname', name: 'Internal Hostname', category: 'Network', generate: () => `${faker.internet.domainWord()}-${faker.number.int({ min: 1, max: 99 })}.internal.corp`, defaultSelected: false },
   { id: 'cidrBlock',       name: 'CIDR Block',        category: 'Network', generate: () => `${faker.internet.ipv4()}/${faker.number.int({ min: 8, max: 30 })}`, defaultSelected: false },
   { id: 'geoCoordinates',  name: 'Geo Coordinates',   category: 'Network', generate: () => `${faker.location.latitude()}, ${faker.location.longitude()}`, defaultSelected: false },

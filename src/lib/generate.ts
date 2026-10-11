@@ -2,8 +2,11 @@
 // Keep this free of DOM/worker globals so both consumers can import it.
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed, SEED_REF_DATE } from './seed';
-import { getFaker, resolveLocale, LocaleId } from './locale';
+import { getFaker, resolveLocale, sexLabel, LocaleId } from './locale';
 import { luhnValid, vinValid } from './validators';
+
+/** Leads every CSV file we write, so Excel reads non-ASCII names (German, Japanese…) as UTF-8. */
+export const UTF8_BOM = '\uFEFF';
 
 export function csvEscape(val: any): string {
   if (val === null || val === undefined) return '';
@@ -24,10 +27,14 @@ export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): 
   // the dob column: one year less until this year's birthday has passed.
   const ref = f.defaultRefDate();
   const monthDay = (d: Date) => d.getUTCMonth() * 100 + d.getUTCDate();
+  const sex = f.helpers.arrayElement(['female', 'male'] as const);
+  // Straight from the gendered list: `person.firstName(sex)` blends in Faker's generic names,
+  // and ~6% of those belong to the other list.
+  const gendered = f.definitions.person.first_name[sex];
   const fctx: any = {
-    firstName: f.person.firstName(),
-    lastName: f.person.lastName(),
-    gender: f.person.sex(),
+    firstName: gendered ? f.helpers.arrayElement(gendered) : f.person.firstName(sex),
+    lastName: f.person.lastName(sex),
+    gender: sexLabel(rowLocale, sex),
     dob,
     age: ref.getUTCFullYear() - dob.getUTCFullYear() - (monthDay(ref) < monthDay(dob) ? 1 : 0),
     faker: f,
@@ -138,6 +145,16 @@ export function _selfCheck() {
     const birthdayThisYear = Date.UTC(dob.getUTCFullYear() + r.age, dob.getUTCMonth(), dob.getUTCDate());
     const birthdayNextYear = Date.UTC(dob.getUTCFullYear() + r.age + 1, dob.getUTCMonth(), dob.getUTCDate());
     if (birthdayThisYear > ref || birthdayNextYear <= ref || r.age < 18 || r.age > 80) throw new Error(`FAIL: age ${r.age} vs dob ${r.dob}`);
+  }
+  // first name is drawn for the row's gender (checked where Faker's lists are unambiguous).
+  for (const loc of ['en', 'de', 'ja'] as const) {
+    const names = getFaker(loc).definitions.person.first_name;
+    const male = new Set(names.male), female = new Set(names.female);
+    for (const r of generateRows({ columnIds: ['firstName', 'gender'], rowCount: 500, seed: 11, locale: loc })) {
+      const wrongList = r.gender === sexLabel(loc, 'female') ? male : female;
+      const ownList = r.gender === sexLabel(loc, 'female') ? female : male;
+      if (wrongList.has(r.firstName) && !ownList.has(r.firstName)) throw new Error(`FAIL: ${loc} name ${r.firstName} vs gender ${r.gender}`);
+    }
   }
   // checksum columns hold their contract; near-miss columns never accidentally pass.
   for (const r of generateRows({ columnIds: ['creditCard', 'creditCard_invalid', 'vin', 'vin_invalid'], rowCount: 2000, seed: 5 })) {

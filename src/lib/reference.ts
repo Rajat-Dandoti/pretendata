@@ -42,13 +42,13 @@ const COLUMN_PATTERNS: Record<string, string> = {
   diagnosisCode: '[A-Z]\\d{2}\\.\\d',
   npi: '\\d{10}',
   dea: '[A-Z]{2}\\d{7}',
-  nhsNumber: '\\d{10}',
-  creditCard: '\\d{13,16}',
-  cvv: '\\d{3,4}',
+  nhsNumber: '\\d{3} \\d{3} \\d{4}',
+  creditCard: '\\d{13}|\\d{4}-\\d{4}-\\d{4}-\\d{4}|\\d{4}-\\d{6}-\\d{4,5}',
+  cvv: '\\d{3}',
   routingNumber: '\\d{9}',
   accountNumber: '\\d{10}',
   iban: '[A-Z]{2}\\d{2}[A-Z0-9]+',
-  zipCode: '\\d{5}',
+  zipCode: '\\d{5}(-\\d{4})?',
   gstin: '\\d{2}[A-Z]{5}\\d{4}[A-Z][1-9]Z[0-9A-Z]',
   vin: '[A-HJ-NPR-Z0-9]{17}',
   imei: '\\d{15}',
@@ -58,12 +58,12 @@ const COLUMN_PATTERNS: Record<string, string> = {
   tokenizedCard: '\\*{4}-\\*{4}-\\*{4}-\\d{4}',
   maskedAccount: '\\*{6}\\d{4}',
   hashedId: '<uuid v4>',
-  awsAccessKey: 'AKIA[A-Z0-9]{16}',
+  awsAccessKey: 'AKIA[A-Z2-7]{16}',
   awsSecretKey: '[A-Za-z0-9]{40}',
   githubPAT: 'ghp_[A-Za-z0-9]{36}',
   stripeKey: 'sk_live_[A-Za-z0-9]{24}',
   googleApiKey: 'AIza[A-Za-z0-9]{35}',
-  jwt: 'eyJ[A-Za-z0-9]+\\.[A-Za-z0-9]+\\.[A-Za-z0-9]+',
+  jwt: 'eyJ[A-Za-z0-9_-]+\\.eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{43}',
   bcryptHash: '\\$2b\\$10\\$[A-Za-z0-9]{53}',
   fingerprintHash: '[0-9a-f]{64}',
   faceEmbeddingId: 'FACE-<uuid>',
@@ -100,5 +100,13 @@ export function _selfCheck() {
   const s = sampleValues('en');
   if (!('email' in s) || !('aadhaar' in s)) throw new Error('FAIL: sampleValues coverage');
   if (patternFor('pan') !== '[A-Z]{5}\\d{4}[A-Z]' || patternFor('firstName') !== undefined) throw new Error('FAIL: patternFor');
+  // every documented pattern must match what its column really emits (`<uuid>`-style ones are prose).
+  const rows = Array.from({ length: 300 }, () => sampleValues('en'));
+  for (const [id, p] of Object.entries(COLUMN_PATTERNS)) {
+    if (p.includes('<')) continue;
+    const re = new RegExp(`^(?:${p})$`);
+    const miss = rows.find(r => !re.test(String(r[id])));
+    if (miss) throw new Error(`FAIL: pattern for ${id} (${p}) does not match ${JSON.stringify(miss[id])}`);
+  }
   console.log('reference: all self-checks passed');
 }

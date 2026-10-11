@@ -95,12 +95,21 @@ export function generateGSTIN(): string {
   return base + gstinChecksum(base);
 }
 
-// IBAN: simplified — country + 2 check digits + BBAN of country-typical length
-const IBAN_SPECS: Record<string, number> = { DE: 18, FR: 23, GB: 18, ES: 20, IT: 23, NL: 14 };
+// IBAN: country + 2 check digits (mod-97) + BBAN in the country's registry layout
+// ([letters, digits] — GB/NL lead with a 4-letter bank code, IT with its CIN letter).
+// ponytail: national check digits inside the BBAN (FR RIB key, ES DC, IT CIN) are random —
+// compute them if a detector validates past length + layout + mod-97.
+const IBAN_BBAN: Record<string, [letters: number, digits: number]> = {
+  DE: [0, 18], FR: [0, 23], GB: [4, 14], ES: [0, 20], IT: [1, 22], NL: [4, 10],
+};
+/** mod-97 == 1 over the rearranged IBAN (BBAN + country + check digits). */
+export function ibanValid(iban: string): boolean {
+  return mod97(lettersToDigits(iban.slice(4) + iban.slice(0, 4))) === 1;
+}
 export function generateIBAN(): string {
-  const country = pick(Object.keys(IBAN_SPECS));
-  const bbanLen = IBAN_SPECS[country] - 4;
-  const bban = digits(bbanLen);
+  const country = pick(Object.keys(IBAN_BBAN));
+  const [letters, numbers] = IBAN_BBAN[country];
+  const bban = alphaUpper(letters) + digits(numbers);
   const check = 98 - mod97(lettersToDigits(bban + country + '00'));
   return country + String(check).padStart(2, '0') + bban;
 }
@@ -230,6 +239,17 @@ export function generateVehicleRegIndia(): string {
 export function generateIFSC(): string { return alphaUpper(4) + '0' + digits(6); }
 // ABHA (health ID): 14 digits. ponytail: checksum unverified (Verhoeff plausible, unconfirmed) → pattern-only.
 export function generateABHA(): string { return digits(14); }
+
+// JWT: base64url(JSON header).base64url(JSON payload).signature — the real layout, so both
+// segments decode and start with "eyJ", which is what scanners key on. The signature is random
+// (43 chars = the length of an HS256 one), so it never verifies.
+const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const b64urlJson = (o: object) => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+export function generateJWT(): string {
+  const iat = Math.floor(faker.date.recent({ days: 30 }).getTime() / 1000);
+  const payload = { sub: faker.string.uuid(), iat, exp: iat + 3600 };
+  return `${b64urlJson({ alg: 'HS256', typ: 'JWT' })}.${b64urlJson(payload)}.${faker.string.fromCharacters(B64URL, 43)}`;
+}
 
 // Saudi Iqama (resident permit): 10 digits, prefix 2 (nationals start with 1), Luhn check digit.
 export function generateIqama(): string {
@@ -375,10 +395,23 @@ export function _selfCheck() {
   const g = generateGSTIN();
   assert(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9]Z[A-Z0-9]$/.test(g), 'GSTIN format');
   assert(gstinChecksum(g.slice(0,14)) === g[14], 'GSTIN checksum');
-  // IBAN — verify mod-97 == 1
-  const ib = generateIBAN();
-  const rearr = ib.slice(4) + ib.slice(0,4);
-  assert(mod97(lettersToDigits(rearr)) === 1, 'IBAN mod-97');
+  // IBAN — registry length + BBAN layout per country, mod-97 == 1, and the near-miss fails it
+  const IBAN_RE: Record<string, RegExp> = {
+    DE: /^DE\d{20}$/, FR: /^FR\d{25}$/, GB: /^GB\d{2}[A-Z]{4}\d{14}$/,
+    ES: /^ES\d{22}$/, IT: /^IT\d{2}[A-Z]\d{22}$/, NL: /^NL\d{2}[A-Z]{4}\d{10}$/,
+  };
+  for (let i = 0; i < 300; i++) {
+    const ib = generateIBAN();
+    assert(IBAN_RE[ib.slice(0, 2)].test(ib), `IBAN layout: ${ib}`);
+    assert(ibanValid(ib), `IBAN mod-97: ${ib}`);
+    assert(!ibanValid(breakChecksum(ib)), `bad IBAN still valid: ${ib}`);
+  }
+  assert(ibanValid('GB82WEST12345698765432') && ibanValid('NL91ABNA0417164300'), 'known-good IBANs');
+  // JWT — header and payload are base64url JSON
+  const [jh, jp, js] = generateJWT().split('.');
+  const unb64 = (x: string) => JSON.parse(atob(x.replace(/-/g, '+').replace(/_/g, '/')));
+  assert(unb64(jh).alg === 'HS256' && typeof unb64(jp).sub === 'string' && unb64(jp).exp > unb64(jp).iat, 'JWT segments decode');
+  assert(jp.startsWith('eyJ') && /^[A-Za-z0-9_-]{43}$/.test(js), 'JWT shape');
   // NPI Luhn
   const n = generateNPI();
   assert(luhnCheckDigit('80840' + n.slice(0,9)) === parseInt(n[9],10), 'NPI Luhn');

@@ -1,12 +1,7 @@
-import streamSaver from 'streamsaver';
 import type { LocaleId } from './locale';
 import { AVAILABLE_COLUMNS } from '../data/schema';
-import { csvEscape, STREAM_CHUNK_ROWS } from './generate';
-
-// Self-hosted mitm+service-worker (public/mitm.html, public/sw.js — vendored from the
-// streamsaver package) instead of its default third-party GitHub Pages iframe: keeps the
-// fallback download path same-origin, consistent with "nothing leaves your machine".
-streamSaver.mitm = '/mitm.html';
+import { csvEscape, generateChunkText, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
+import { applySeed } from './seed';
 
 export type StreamFormat = 'csv' | 'ndjson';
 
@@ -102,28 +97,39 @@ async function openSink(suggestedName: string, format: StreamFormat): Promise<Si
     let size = 0;
     let lastCheckpoint = performance.now();
     let checkpointCost = 0;
+    let inFlight: Promise<void> = Promise.resolve();
+    const write = async (bytes: Uint8Array) => {
+      await writable.write(bytes);
+      size += bytes.byteLength;
+      // Chrome writes to a hidden swap file and only moves it onto the picked file at
+      // close(), so a tab that reloads or dies mid-run leaves 0 bytes. Checkpoint = close
+      // (commits everything so far) + reopen at the end of the file.
+      // ponytail: a checkpoint costs O(file size) (Chrome re-scans the file, and may copy
+      // it → up to 2× disk), so they are spaced ≥10× the last one's duration (~10% overhead
+      // cap). If that hurts on huge files, write numbered part files into a folder instead.
+      if (performance.now() - lastCheckpoint >= Math.max(CHECKPOINT_MIN_MS, checkpointCost * 10)) {
+        const t = performance.now();
+        await writable.close();
+        writable = await fileHandle.createWritable({ keepExistingData: true });
+        await writable.seek(size);
+        lastCheckpoint = performance.now();
+        checkpointCost = lastCheckpoint - t;
+      }
+    };
     return {
-      async write(bytes) {
-        await writable.write(bytes);
-        size += bytes.byteLength;
-        // Chrome writes to a hidden swap file and only moves it onto the picked file at
-        // close(), so a tab that reloads or dies mid-run leaves 0 bytes. Checkpoint = close
-        // (commits everything so far) + reopen at the end of the file.
-        // ponytail: a checkpoint costs O(file size) (Chrome re-scans the file, and may copy
-        // it → up to 2× disk), so they are spaced ≥10× the last one's duration (~10% overhead
-        // cap). If that hurts on huge files, write numbered part files into a folder instead.
-        if (performance.now() - lastCheckpoint >= Math.max(CHECKPOINT_MIN_MS, checkpointCost * 10)) {
-          const t = performance.now();
-          await writable.close();
-          writable = await fileHandle.createWritable({ keepExistingData: true });
-          await writable.seek(size);
-          lastCheckpoint = performance.now();
-          checkpointCost = lastCheckpoint - t;
-        }
-      },
-      close: () => writable.close(),
+      write: (bytes) => (inFlight = write(bytes)),
+      // A cancelled run closes while a write may still be mid-checkpoint (closed, not yet
+      // reopened). Let it land first, or the reopened swap file is never closed.
+      close: () => inFlight.catch(() => {}).then(() => writable.close()),
     };
   }
+  // Imported on demand: only browsers without the File System Access API need it, and it
+  // touches `document` at import, which would keep this module out of `npm test`.
+  const { default: streamSaver } = await import('streamsaver');
+  // Self-hosted mitm+service-worker (public/mitm.html, public/sw.js — vendored from the
+  // streamsaver package) instead of its default third-party GitHub Pages iframe: keeps the
+  // fallback download path same-origin, consistent with "nothing leaves your machine".
+  streamSaver.mitm = '/mitm.html';
   const writer = streamSaver.createWriteStream(suggestedName).getWriter();
   return {
     write: (bytes) => writer.write(bytes),
@@ -136,7 +142,7 @@ async function openSink(suggestedName: string, format: StreamFormat): Promise<Si
  * chunks in parallel; the main thread writes them strictly in chunk order.
  */
 export async function streamGenerateToFile(opts: StreamOptions): Promise<{ written: number }> {
-  const suggestedName = opts.format === 'csv' ? 'privacy_test_data.csv' : 'privacy_test_data.ndjson';
+  const suggestedName = `pretendata.${opts.format}`;
   const sink = await openSink(suggestedName, opts.format);
   const totalChunks = Math.ceil(opts.rowCount / STREAM_CHUNK_ROWS);
   const poolSize = Math.min(totalChunks, streamPoolSize());
@@ -147,7 +153,7 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
   try {
     if (opts.format === 'csv') {
       const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
-      await sink.write(new TextEncoder().encode(cols.map(c => csvEscape(c.name)).join(',') + '\n'));
+      await sink.write(new TextEncoder().encode(UTF8_BOM + cols.map(c => csvEscape(c.name)).join(',') + '\n'));
     }
     await new Promise<void>((resolve, reject) => {
       const ready = new Map<number, Uint8Array>(); // finished chunks waiting for their turn
@@ -220,4 +226,76 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
   workers.forEach(w => w.terminate());
   await sink.close();
   return { written };
+}
+
+// ---------- self-check (run via `npm test`) ----------
+// Drives the real pool/ordering/checkpoint code against a fake picker and fake workers.
+// The fake file only shows data once its writable is closed, like Chrome's swap file.
+export async function _selfCheck() {
+  const g = globalThis as any;
+  const saved = { window: g.window, Worker: g.Worker, now: performance.now };
+  const dec = new TextDecoder('utf-8', { ignoreBOM: true }); // keep the BOM: the fake file must hold every byte
+  const opts = { columnIds: ['firstName', 'ssn'], rowCount: STREAM_CHUNK_ROWS * 12 + 123, sparsity: 10, seed: 9, format: 'csv' as const, locale: 'mix' as const };
+  const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
+  let expected = UTF8_BOM + 'First Name,SSN\n';
+  for (let chunk = 0; chunk < 13; chunk++) expected += generateChunkText(cols, { ...opts, chunk, rows: chunk < 12 ? STREAM_CHUNK_ROWS : 123 });
+
+  // Workers answer out of order (later chunks sooner) so the writer has to reorder them.
+  g.Worker = class {
+    onmessage: ((e: any) => void) | null = null;
+    dead = false;
+    postMessage(m: any) {
+      if (m.type !== 'job') return;
+      const bytes = new TextEncoder().encode(generateChunkText(cols, { ...opts, chunk: m.chunk, rows: m.rows }));
+      setTimeout(() => { if (!this.dead) this.onmessage?.({ data: { type: 'chunk', chunk: m.chunk, bytes } }); }, 6 - (m.chunk % 6));
+    }
+    terminate() { this.dead = true; }
+  };
+  const fakeFile = (onClose: (n: number) => void) => {
+    const file = { text: '', open: 0, closes: 0 };
+    g.window = { showSaveFilePicker: async () => ({
+      async createWritable(o?: { keepExistingData?: boolean }) {
+        let swap = o?.keepExistingData ? file.text : '';
+        let closed = false;
+        file.open++;
+        return {
+          async write(b: Uint8Array) { swap += dec.decode(b); },
+          async seek(pos: number) { if (pos !== new TextEncoder().encode(swap).length) throw new Error('seek is not at the end of the file'); },
+          async close() {
+            if (closed) throw new TypeError('writable already closed');
+            closed = true;
+            onClose(++file.closes);
+            await new Promise(r => setTimeout(r, 5));
+            file.text = swap;
+            file.open--;
+          },
+        };
+      },
+    }) };
+    return file;
+  };
+  // Fake clock: every look at it is 40s later, so periodic saves happen within a 13-chunk run.
+  let clock = 0;
+  performance.now = () => (clock += 40_000);
+  try {
+    const full = fakeFile(() => {});
+    const res = await streamGenerateToFile(opts);
+    if (res.written !== opts.rowCount) throw new Error('FAIL: stream row count');
+    if (full.text !== expected) throw new Error('FAIL: streamed file differs from in-order chunks');
+    if (full.closes < 3 || full.open !== 0) throw new Error(`FAIL: checkpoints (${full.closes} closes, ${full.open} left open)`);
+
+    // Cancel in the middle of a periodic save: what was saved stays, nothing is left open.
+    clock = 0;
+    const ac = new AbortController();
+    const cut = fakeFile(n => { if (n === 2) ac.abort(); });
+    const err = await streamGenerateToFile({ ...opts, signal: ac.signal }).then(() => null, e => e);
+    await new Promise(r => setTimeout(r, 50));
+    if (err?.message !== 'Cancelled') throw new Error('FAIL: cancel should reject with Cancelled');
+    if (cut.open !== 0) throw new Error('FAIL: cancel during a save left a writable open');
+    if (cut.text.length < 1000 || !expected.startsWith(cut.text)) throw new Error('FAIL: cancelled file is not a clean prefix');
+  } finally {
+    g.window = saved.window; g.Worker = saved.Worker; performance.now = saved.now;
+    applySeed(null);
+  }
+  console.log('streaming: all self-checks passed');
 }
