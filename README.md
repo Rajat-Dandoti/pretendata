@@ -50,7 +50,11 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   South Africa, UAE (Emirates ID), Saudi (Iqama). Each validator is tested against a published example.
 - **Compliance tagging (beta)** — see which regulations (GDPR / HIPAA / DPDP) each column falls under,
   with a per-column footprint breakdown.
-- **Column Reference** drawer — a live example, regex/pattern, and checksum algorithm for every column.
+- **Column picker** with search, filters by region and by what a detector should do, and an expandable
+  row per column showing a live example, its pattern and its check. Each preset says what it is for.
+- **Column Reference** drawer — the same for every column at once, plus a box to paste any value and see
+  which identifiers it fits and whether it passes their checks.
+- Keyboard: `/` jumps to the column search, `Ctrl`/`Cmd`+`Enter` downloads; click a cell to copy it.
 - **Nested-JSON export** — flat, grouped-by-category, semantic record, or deep-nested N levels
   (to test whether a classifier traverses nested structures).
 - Chaos / malformed preset, dataset risk summary, reproducible **seeds**, sparsity (null injection),

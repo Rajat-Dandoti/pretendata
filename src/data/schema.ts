@@ -479,6 +479,28 @@ export const PRESETS: Record<string, string[]> = {
   'EU GDPR Sweep': ['firstName', 'lastName', 'iban', 'dlGermany', 'dlUK', 'email', 'phone', 'ipAddress', 'macAddress', 'dob', 'city'],
 };
 
+/** One line per preset: what it is for and what a detector should do with it. */
+export const PRESET_INFO: Record<string, string> = {
+  'Common Users': 'A typical users table: names, contact details, a few dates.',
+  'HR / Employees': 'An employee file: SSN, salary, job and performance data.',
+  'CRM / Customers': 'Customer records with purchase and login activity.',
+  'Bank / Fintech': 'Account, routing and card-token data with balances and scores.',
+  'Healthcare / Patients': 'Patient records: identifiers next to diagnoses and notes.',
+  'Education / Students': 'Student records with grades and enrolment data.',
+  'Technical / IT': 'Device and network telemetry; little that names a person.',
+  'DLP Detection Test': 'One of every classic checksum-valid identifier. Everything sensitive should fire.',
+  'DLP False-Positive Test': 'Every near-miss and hard negative. Apart from the name and email, nothing should fire.',
+  'Secrets Leak Test': 'Every credential and key format. A secret scanner should catch them all.',
+  'App Telemetry': 'Log-style network and session fields: IPs, cookies, hostnames.',
+  'Biometric / Special-Category': 'Biometric templates next to basic identity fields.',
+  'Chaos / Malformed': 'Hostile and malformed values. Nothing should fire, and nothing should break.',
+  'India PII': 'Indian identifiers with Indian names and phone numbers.',
+  'India Fintech': 'Indian banking and KYC fields: PAN, Aadhaar, UPI, IFSC.',
+  'US Healthcare': 'US patient and provider identifiers: SSN, MRN, NPI, DEA.',
+  'National IDs (World)': 'One national identifier from each of thirteen countries, on the same person.',
+  'EU GDPR Sweep': 'European identifiers and network data, with German names.',
+};
+
 /**
  * Presets that also switch the locale, so names/addresses/phone match the region
  * the preset is about (an "India PII" sheet with US phone numbers is useless).

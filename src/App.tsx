@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Download, Upload, Settings, RefreshCw, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github, KeyRound, Target, Ban, CircleHelp, ClipboardCheck, FileText, ShieldCheck } from 'lucide-react';
-import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES, Expectation, EXPECTATION_LABELS, expectationFor } from './data/schema';
+import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_INFO, PRESET_LOCALES, Expectation, EXPECTATION_LABELS, expectationFor } from './data/schema';
+import { describeValidation, patternFor, sampleValues } from './lib/reference';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, Tip, TIER_CHIP } from './lib/ui';
 import { exportCSV, exportJSON, exportNDJSON, exportSQL, exportPresetConfig, downloadAnswerKey } from './lib/exporters';
@@ -21,6 +22,13 @@ import { Benchmark, BENCHMARK_VERSION } from './data/benchmarks';
 
 // ponytail: no more per-row left border — accent moved to a card around the whole category.
 // Kept the map deleted; category color still comes from CATEGORY_COLORS.
+
+// Regions that have columns of their own, for the picker's filter.
+const REGIONS = [...new Set(AVAILABLE_COLUMNS.map(c => c.region).filter((r): r is string => !!r))].sort();
+const REGION_NAMES: Record<string, string> = {
+  AE: 'UAE', AU: 'Australia', BR: 'Brazil', CA: 'Canada', CN: 'China', DE: 'Germany', ES: 'Spain', FR: 'France', IN: 'India', INTL: 'International',
+  NL: 'Netherlands', SA: 'Saudi Arabia', SG: 'Singapore', UK: 'United Kingdom', US: 'United States', ZA: 'South Africa',
+};
 
 // What a detector should do with a column, as a quiet mark at the end of its row.
 const EXPECTATION_MARK: Record<Expectation, { Icon: typeof Target; className: string }> = {
@@ -123,6 +131,12 @@ export default function App() {
   const [showText, setShowText] = useState(false);
   const [showMaskCheck, setShowMaskCheck] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState<boolean>(false);
+  // Picker filters ('' = no filter) and the one column whose details are open.
+  const [regionFilter, setRegionFilter] = useState('');
+  const [expectFilter, setExpectFilter] = useState<Expectation | ''>('');
+  const [openColumn, setOpenColumn] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const downloadRef = useRef<() => void>(() => {});
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
     const collapsed = new Set<string>();
     for (const cat of Object.keys(CATEGORY_COLORS)) {
@@ -234,18 +248,23 @@ export default function App() {
   // Filter by search + optional selected-only toggle.
   const filteredColumnsByCategory = useMemo(() => {
     const q = columnSearch.trim().toLowerCase();
-    if (!q && !showSelectedOnly) return columnsByCategory;
+    if (!q && !showSelectedOnly && !regionFilter && !expectFilter) return columnsByCategory;
     const out: Record<string, ColumnDef[]> = {};
     for (const [cat, cols] of Object.entries(columnsByCategory)) {
       const matches = cols.filter(c => {
         if (showSelectedOnly && !selectedColumns.has(c.id)) return false;
+        if (regionFilter && c.region !== regionFilter) return false;
+        if (expectFilter && expectationFor(c) !== expectFilter) return false;
         if (!q) return true;
         return c.name.toLowerCase().includes(q) || c.id.toLowerCase().includes(q);
       });
       if (matches.length > 0) out[cat] = matches;
     }
     return out;
-  }, [columnSearch, columnsByCategory, showSelectedOnly, selectedColumns]);
+  }, [columnSearch, columnsByCategory, showSelectedOnly, selectedColumns, regionFilter, expectFilter]);
+  const filtering = columnSearch.trim() !== '' || regionFilter !== '' || expectFilter !== '';
+  // An example of every column for the open details row; redrawn when the locale changes.
+  const samples = useMemo(() => (openColumn ? sampleValues(locale) : {}), [openColumn, locale]);
 
   // Select-all / clear over the currently-visible (filtered) columns.
   const filteredIds = useMemo(() => Object.values(filteredColumnsByCategory).flat().map(c => c.id), [filteredColumnsByCategory]);
@@ -417,6 +436,18 @@ export default function App() {
     setToast({ text: `Benchmark v${BENCHMARK_VERSION} · ${b.name} loaded. Download it and its answer key, run your tool, then score the results.` });
   };
 
+  // Keyboard: "/" jumps to the column search; Ctrl/Cmd+Enter downloads.
+  downloadRef.current = () => { if (!isGenerating && selectedColumns.size > 0) void download(); };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
+      if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setMobileDrawer('columns'); searchRef.current?.focus(); }
+      else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); downloadRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const cancelGeneration = () => {
     streamAbortRef.current?.abort();
   };
@@ -572,6 +603,7 @@ export default function App() {
                 { value: 'Custom', label: 'Custom Selection' },
               ]}
             />
+            <p className={cn(T.meta, 'leading-snug')} data-role="preset-info">{PRESET_INFO[selectedPreset] ?? 'Your own selection of columns.'}</p>
           </div>
 
           {/* Locale Selection */}
@@ -800,10 +832,11 @@ export default function App() {
           <div className="relative flex-1">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
+              ref={searchRef}
               type="text"
               value={columnSearch}
               onChange={(e) => setColumnSearch(e.target.value)}
-              placeholder="Search columns…"
+              placeholder="Search columns…  ( / )"
               className="w-full pl-8 pr-2 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
@@ -830,11 +863,23 @@ export default function App() {
               : <ChevronRight size={14} />}
           </button>
         </div>
+        <div className="px-4 py-2 border-b border-slate-200 flex items-center gap-2" data-role="picker-filters">
+          <select value={regionFilter} onChange={e => setRegionFilter(e.target.value)} aria-label="Filter columns by region"
+            className={cn('flex-1 min-w-0 text-xs border rounded-md px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500', regionFilter ? 'border-indigo-300 text-indigo-700' : 'border-slate-200 text-slate-600')}>
+            <option value="">All regions</option>
+            {REGIONS.map(r => <option key={r} value={r}>{REGION_NAMES[r] ?? r}</option>)}
+          </select>
+          <select value={expectFilter} onChange={e => setExpectFilter(e.target.value as Expectation | '')} aria-label="Filter columns by what a detector should do"
+            className={cn('flex-1 min-w-0 text-xs border rounded-md px-1.5 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500', expectFilter ? 'border-indigo-300 text-indigo-700' : 'border-slate-200 text-slate-600')}>
+            <option value="">Any expectation</option>
+            {(['detect', 'ignore', 'context'] as const).map(e => <option key={e} value={e}>{EXPECTATION_LABELS[e]}</option>)}
+          </select>
+        </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {Object.entries(filteredColumnsByCategory).map(([category, cols]) => {
             const colArr = cols as ColumnDef[];
             const selectedInCat = colArr.filter(c => selectedColumns.has(c.id)).length;
-            const isCollapsed = columnSearch.trim() === '' && collapsedCategories.has(category);
+            const isCollapsed = !filtering && collapsedCategories.has(category);
             return (
               <div key={category} className="border border-slate-200 rounded-lg bg-white overflow-hidden">
                 <button
@@ -861,20 +906,37 @@ export default function App() {
                   const normalCols = colArr.filter(c => !/^dl[A-Z]/.test(c.id));
                   const renderBtn = (col: ColumnDef) => {
                     const isSelected = selectedColumns.has(col.id);
+                    const open = openColumn === col.id;
+                    const check = describeValidation(col.validation);
                     return (
-                      <button
-                        key={col.id}
-                        onClick={() => handleToggleColumn(col.id)}
-                        className="w-full flex items-center gap-3 px-2 py-2 lg:py-1.5 rounded-md hover:bg-slate-50 transition-colors text-left group"
-                      >
-                        <div className={cn("flex-shrink-0", isSelected ? "text-indigo-600" : "text-slate-300 group-hover:text-slate-400")}>
-                          {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                      <div key={col.id}>
+                        <div className="flex items-center rounded-md hover:bg-slate-50 transition-colors group">
+                          <button
+                            onClick={() => handleToggleColumn(col.id)}
+                            className="flex-1 min-w-0 flex items-center gap-3 px-2 py-2 lg:py-1.5 text-left"
+                          >
+                            <div className={cn("flex-shrink-0", isSelected ? "text-indigo-600" : "text-slate-300 group-hover:text-slate-400")}>
+                              {isSelected ? <CheckSquare size={16} /> : <Square size={16} />}
+                            </div>
+                            <span className={cn("text-sm truncate", isSelected ? "text-slate-700" : "text-slate-500")}>
+                              {col.name}
+                            </span>
+                            <ExpectationMark expectation={expectationFor(col)} />
+                          </button>
+                          <button type="button" onClick={() => setOpenColumn(open ? null : col.id)} aria-expanded={open} aria-label={`Details for ${col.name}`}
+                            className="shrink-0 p-1.5 text-slate-300 hover:text-slate-600 focus-visible:text-slate-600 outline-none">
+                            <ChevronDown size={13} className={cn('transition-transform', open && 'rotate-180')} />
+                          </button>
                         </div>
-                        <span className={cn("text-sm truncate", isSelected ? "text-slate-700" : "text-slate-500")}>
-                          {col.name}
-                        </span>
-                        <ExpectationMark expectation={expectationFor(col)} />
-                      </button>
+                        {open && (
+                          <div data-role="column-details" className="ml-9 mr-2 mb-1.5 space-y-0.5 text-[11px] text-slate-500">
+                            <div className="font-mono text-slate-700 break-all">{String(samples[col.id] ?? '').slice(0, 120)}</div>
+                            {patternFor(col.id) && <div><span className="text-slate-400">Pattern </span><span className="font-mono">{patternFor(col.id)}</span></div>}
+                            <div><span className="font-semibold">{check.label}</span>{check.note && <> — {check.note}</>}</div>
+                            <div>{EXPECTATION_LABELS[expectationFor(col)]}{col.region ? ` · ${col.region}` : ''}</div>
+                          </div>
+                        )}
+                      </div>
                     );
                   };
                   return (
@@ -898,7 +960,7 @@ export default function App() {
             );
           })}
           {Object.keys(filteredColumnsByCategory).length === 0 && (
-            <p className="text-xs text-slate-400 italic px-2 py-3">No columns match "{columnSearch}".</p>
+            <p className="text-xs text-slate-400 italic px-2 py-3">No columns match these filters.</p>
           )}
         </div>
       </aside>
@@ -1149,7 +1211,8 @@ export default function App() {
                             {i + 1}
                           </td>
                           {activeCols.map(col => (
-                            <td key={col.id} className="px-4 py-2.5 text-slate-600 whitespace-nowrap" title={String(row[col.id])}>
+                            <td key={col.id} className="px-4 py-2.5 text-slate-600 whitespace-nowrap max-w-md truncate cursor-copy" title={`${String(row[col.id])}\n(click to copy)`}
+                              onClick={() => navigator.clipboard?.writeText(String(row[col.id])).then(() => setToast({ text: `Copied ${col.name}` }), () => {})}>
                               {String(row[col.id])}
                             </td>
                           ))}
