@@ -138,6 +138,9 @@ export function generateChunkRows(cols: ColumnDef[], o: Omit<ChunkOptions, 'form
 /** File formats a large run can stream to. */
 export type StreamFormat = 'csv' | 'ndjson' | 'sql';
 export const STREAM_FORMATS: StreamFormat[] = ['csv', 'ndjson', 'sql'];
+/** Formats a dataset can be downloaded in. A JSON array cannot be streamed, so large runs use NDJSON instead. */
+export type ExportFormat = StreamFormat | 'json';
+export const EXPORT_FORMATS: ExportFormat[] = ['csv', 'json', 'ndjson', 'sql'];
 
 /** Serialized text of one stream chunk (no header). */
 export function generateChunkText(cols: ColumnDef[], o: ChunkOptions): string {

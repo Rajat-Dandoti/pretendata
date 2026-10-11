@@ -8,9 +8,9 @@ export default async (page, check) => {
   await pick(page, 'Common Users', 'HR / Employees');
   await pick(page, 'Canonical', 'Evasive');
   await page.fill('input[type="number"]', 500);
-  await page.click('button', 'Generate 500 rows');
+  await page.click('button[aria-label="Preview rows"]');
   await page.waitFor('document.querySelector("h2.text-lg")?.textContent.includes("Generated Data")');
-  const data = await page.download(() => page.click('button[aria-label="Export JSON"]'));
+  const data = await page.download(() => page.click('[data-format="json"]').then(() => page.click('button[aria-label="Download"]')));
   const key = await page.download(() => page.click('button[aria-label="Answer key"]'));
   const rows = JSON.parse(readFileSync(data.path, 'utf8')), k = JSON.parse(readFileSync(key.path, 'utf8'));
   const canonical = rows.filter(r => /^\d{3}-\d{2}-\d{4}$/.test(r.ssn)).length;

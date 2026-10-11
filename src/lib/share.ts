@@ -2,9 +2,8 @@
 // ponytail: base64url(JSON) — round-trips through paste/clipboard, no escaping headaches,
 // short enough for our state. Bump VERSION if the shape changes incompatibly.
 
-import type { StreamFormat } from './streaming';
 import type { LocaleId } from './locale';
-import type { HeaderMode } from './generate';
+import type { ExportFormat, HeaderMode } from './generate';
 import type { Formatting } from './variants';
 
 export const SHARE_VERSION = 1;
@@ -16,7 +15,7 @@ export interface ShareState {
   r: number;          // rowCount
   s: string;          // seed (raw input — empty string = unset)
   sp: number;         // sparsity %
-  f: StreamFormat;    // stream format
+  f: ExportFormat;    // download format
   l?: LocaleId;       // locale (added v1.1, optional for backward-compat)
   h?: HeaderMode;     // header mode (optional; absent = descriptive)
   d?: number;         // density % (optional; absent = 100)

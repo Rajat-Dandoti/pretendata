@@ -56,7 +56,11 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   *Identifier density*: real identifiers in only 50% down to 1% of rows, to test scanners that sample.
   *Identifier formatting*: the same valid values written with spaces, dashes or labels (mixed), or with
   full-width digits, invisible characters, dots and base64 (evasive).
-- Export to **CSV / JSON / NDJSON / SQL**. CSV files start with a UTF-8 BOM so Excel reads non-ASCII
+- **One Download button** — pick CSV, JSON, NDJSON or SQL beside it. The table always shows a live sample
+  of the current settings; *Preview* shows the first 100 rows of the real dataset without downloading.
+  Small datasets are built in memory, large ones are written to the file as they are generated; you do
+  not have to choose. (A JSON array cannot be written that way, so large runs use NDJSON in its place.)
+- Formats: **CSV / JSON / NDJSON / SQL**. CSV files start with a UTF-8 BOM so Excel reads non-ASCII
   names correctly. The SQL dump is a `CREATE TABLE` plus batched `INSERT`s with unquoted snake_case
   column names, and loads as is into SQLite and PostgreSQL (MySQL needs `NO_BACKSLASH_ESCAPES` if a
   value holds a backslash).
@@ -80,7 +84,8 @@ the same thing in headless Chrome.
 
 ## Large datasets (>100k rows)
 
-Above 100k rows the app skips the in-memory preview and streams straight to one CSV, NDJSON or SQL file:
+Above 100k rows the same Download button writes straight to one CSV, NDJSON or SQL file as the rows
+are generated:
 
 - **Parallel generation** — a pool of Web Workers (up to 8, one core left free) generates chunks that
   are written in order. Speed depends mostly on how many columns are selected.

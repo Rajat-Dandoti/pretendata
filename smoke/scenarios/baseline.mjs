@@ -13,20 +13,20 @@ export default async (page, check) => {
   check(await page.eval('[...document.querySelectorAll("tbody tr td")].some(td => /^[2-9]\\d{11}$/.test(td.textContent))'), 'India PII preview has a 12-digit Aadhaar');
 
   // generate 100 rows
-  await page.click('button', 'Generate 100 rows');
+  await page.click('button[aria-label="Preview rows"]');
   await page.waitFor('document.querySelector("h2.text-lg")?.textContent.includes("Generated Data")');
   check(await page.eval('document.querySelectorAll("tbody tr").length') === 100, '100 generated rows shown');
 
-  const csvFile = await page.download(() => page.click('button[aria-label="Export CSV"]'));
+  const csvFile = await page.download(() => page.click('[data-format="csv"]').then(() => page.click('button[aria-label="Download"]')));
   const csv = readFileSync(csvFile.path, 'utf8');
   check(csv.charCodeAt(0) === 0xFEFF && csv.split('\n').length === 102 && csv.endsWith('\n'), `CSV export: BOM, header + 100 rows, trailing newline (${csvFile.name})`);
   check(csv.split('\n')[0].includes('Aadhaar (IN)'), 'CSV header has column names');
 
-  const jsonFile = await page.download(() => page.click('button[aria-label="Export JSON"]'));
+  const jsonFile = await page.download(() => page.click('[data-format="json"]').then(() => page.click('button[aria-label="Download"]')));
   const json = JSON.parse(readFileSync(jsonFile.path, 'utf8'));
   check(Array.isArray(json) && json.length === 100 && /^[2-9]\d{11}$/.test(json[0].aadhaar), 'JSON export: 100 rows with Aadhaar');
 
-  const sqlFile = await page.download(() => page.click('button[aria-label="Export SQL"]'));
+  const sqlFile = await page.download(() => page.click('[data-format="sql"]').then(() => page.click('button[aria-label="Download"]')));
   const sql = readFileSync(sqlFile.path, 'utf8');
   check(sqlFile.name === 'pretendata.sql' && sql.startsWith('CREATE TABLE pretendata (\n  first_name TEXT,') && (sql.match(/^  \(/gm) ?? []).length === 100, 'SQL export: table definition and 100 rows');
 

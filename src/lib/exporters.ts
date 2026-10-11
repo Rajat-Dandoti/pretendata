@@ -1,7 +1,7 @@
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { buildManifest, RunMeta } from './manifest';
 import { nestRows, JsonStructure, DEFAULT_DEPTH } from './nesting';
-import { HeaderMode, rekeyRows, rowsToCSV, rowsToSQL, UTF8_BOM } from './generate';
+import { HeaderMode, rekeyRows, rowsToCSV, rowsToNdjson, rowsToSQL, UTF8_BOM } from './generate';
 
 /**
  * Centralized export utilities — extracted from App.tsx to keep the main component clean.
@@ -44,11 +44,19 @@ export function exportSQL(data: any[], selectedColumns: Set<string>, headers: He
 }
 
 /** Header modes apply to flat JSON only: the nested structures are named after what they hold. */
+function shaped(data: any[], selectedColumns: Set<string>, structure: JsonStructure, depth: number, headers: HeaderMode) {
+  const activeCols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
+  return structure === 'flat' ? rekeyRows(data, activeCols, headers) : nestRows(data, structure, depth);
+}
+
+export function exportNDJSON(data: any[], selectedColumns: Set<string>, structure: JsonStructure = 'flat', depth = DEFAULT_DEPTH, headers: HeaderMode = 'descriptive') {
+  if (data.length === 0) return;
+  downloadBlob(new Blob([rowsToNdjson(shaped(data, selectedColumns, structure, depth, headers))], { type: 'application/x-ndjson' }), 'pretendata.ndjson');
+}
+
 export function exportJSON(data: any[], selectedColumns: Set<string>, structure: JsonStructure = 'flat', depth = DEFAULT_DEPTH, headers: HeaderMode = 'descriptive') {
   if (data.length === 0) return;
-  const activeCols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
-  const rows = structure === 'flat' ? rekeyRows(data, activeCols, headers) : nestRows(data, structure, depth);
-  const json = JSON.stringify(rows, null, 2);
+  const json = JSON.stringify(shaped(data, selectedColumns, structure, depth, headers), null, 2);
   downloadBlob(new Blob([json], { type: 'application/json' }), 'pretendata.json');
 }
 

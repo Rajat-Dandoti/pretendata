@@ -17,16 +17,17 @@ export default async (page, check) => {
   check(!('kAnonymity' in key1) && !('mode' in key1), 'old fields removed');
 
   // in-memory run: key + data
-  await page.click('button', 'Generate 100 rows');
+  await page.click('button[aria-label="Preview rows"]');
   await page.waitFor('document.querySelector("h2.text-lg")?.textContent.includes("Generated Data")');
-  const data = await page.download(() => page.click('button[aria-label="Export JSON"]'));
+  const data = await page.download(() => page.click('[data-format="json"]').then(() => page.click('button[aria-label="Download"]')));
   const key = await page.download(() => page.click('button[aria-label="Answer key"]'));
   copyFileSync(data.path, join(page.out, 'ak-data.json')); copyFileSync(key.path, join(page.out, 'ak-key.json'));
 
   // streamed run: key + hash of the file the browser wrote
   await page.fill('input[type="number"]', 150000);
-  await page.waitFor('[...document.querySelectorAll("button")].some(b => b.textContent.includes("Stream 150k"))');
-  await page.click('button', 'Stream 150k');
+  await page.click('[data-format="csv"]'); // the JSON export above left JSON selected, which a large run writes as NDJSON
+  await page.waitFor('document.querySelector(\'button[aria-label="Download"]\').textContent.includes("150k")');
+  await page.click('button[aria-label="Download"]');
   await page.waitFor('[...document.querySelectorAll("div")].some(d => d.textContent.startsWith("Streamed 150,000 rows"))', 120000);
   const hash = await page.eval(`(async () => { const f = await (await (await navigator.storage.getDirectory()).getFileHandle('out.csv')).getFile(); const h = await crypto.subtle.digest('SHA-256', await f.arrayBuffer()); return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join(''); })()`);
   const bigKey = await page.download(() => page.click('button[aria-label="Answer key"]'));

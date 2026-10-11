@@ -8,9 +8,9 @@ export default async (page, check) => {
   await page.waitFor('document.querySelectorAll("tbody tr").length === 5');
   await pick(page, 'Common Users', 'HR / Employees');
   await page.fill('input[type="number"]', 500);
-  await page.click('button', 'Generate 500 rows');
+  await page.click('button[aria-label="Preview rows"]');
   await page.waitFor('document.querySelector("h2.text-lg")?.textContent.includes("Generated Data")');
-  const data = await page.download(() => page.click('button[aria-label="Export CSV"]'));
+  const data = await page.download(() => page.click('[data-format="csv"]').then(() => page.click('button[aria-label="Download"]')));
   const key = await page.download(() => page.click('button[aria-label="Answer key"]'));
 
   // A stand-in masking tool: tokenise names, emails and phones, keep the SSN's shape — and slip up three times.

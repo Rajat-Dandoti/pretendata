@@ -15,13 +15,13 @@ export default async (page, check) => {
   // density 10%
   await pick(page, 'Every row', '10% of rows');
   await page.fill('input[type="number"]', 2000);
-  await page.click('button', 'Generate 2k rows');
+  await page.click('button[aria-label="Preview rows"]');
   await page.waitFor('document.querySelector("h2.text-lg")?.textContent.includes("Generated Data")');
 
-  const csvF = await page.download(() => page.click('button[aria-label="Export CSV"]'));
+  const csvF = await page.download(() => page.click('[data-format="csv"]').then(() => page.click('button[aria-label="Download"]')));
   const csv = readFileSync(csvF.path, 'utf8');
   check(csv.slice(1, 25).startsWith('col_01,col_02,col_03'), 'CSV header is neutral');
-  const jsonF = await page.download(() => page.click('button[aria-label="Export JSON"]'));
+  const jsonF = await page.download(() => page.click('[data-format="json"]').then(() => page.click('button[aria-label="Download"]')));
   const rows = JSON.parse(readFileSync(jsonF.path, 'utf8'));
   check(Object.keys(rows[0]).join() === Array.from({ length: 13 }, (_, i) => `col_${String(i + 1).padStart(2, '0')}`).join(), 'JSON keys are neutral');
   const keyF = await page.download(() => page.click('button[aria-label="Answer key"]'));
@@ -54,8 +54,8 @@ export default async (page, check) => {
 
   // streamed NDJSON under misleading headers
   await page.fill('input[type="number"]', 120000);
-  await page.click('button', 'NDJSON');
-  await page.click('button', 'Stream 120k');
+  await page.click('[data-format="ndjson"]');
+  await page.click('button[aria-label="Download"]');
   await page.waitFor('[...document.querySelectorAll("div")].some(d => d.textContent.startsWith("Streamed 120,000 rows"))', 120000);
   const first = await page.eval(`(async () => { const f = await (await (await navigator.storage.getDirectory()).getFileHandle('out.ndjson')).getFile(); const t = await f.slice(0, 4000).text(); return JSON.parse(t.split('\\n')[0]); })()`);
   const sk = JSON.parse(readFileSync((await page.download(() => page.click('button[aria-label="Answer key"]'))).path, 'utf8'));

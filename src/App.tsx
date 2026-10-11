@@ -1,16 +1,16 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github, KeyRound, Target, Ban, CircleHelp, ClipboardCheck, FileText, ShieldCheck } from 'lucide-react';
+import { Download, Upload, Settings, RefreshCw, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github, KeyRound, Target, Ban, CircleHelp, ClipboardCheck, FileText, ShieldCheck } from 'lucide-react';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES, Expectation, EXPECTATION_LABELS, expectationFor } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, Tip, TIER_CHIP } from './lib/ui';
-import { exportCSV, exportJSON, exportSQL, exportPresetConfig, downloadAnswerKey } from './lib/exporters';
+import { exportCSV, exportJSON, exportNDJSON, exportSQL, exportPresetConfig, downloadAnswerKey } from './lib/exporters';
 import { JsonStructure } from './lib/nesting';
 import { RunMeta } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
-import { streamGenerateToFile, StreamFormat, generateInWorker, streamPoolSize, isGzipSupported } from './lib/streaming';
+import { streamGenerateToFile, generateInWorker, streamPoolSize, isGzipSupported } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION, ShareState } from './lib/share';
 import { LOCALES, LocaleId } from './lib/locale';
-import { makeRow, headersFor, HeaderMode, HEADER_MODES, STREAM_FORMATS } from './lib/generate';
+import { makeRow, headersFor, HeaderMode, HEADER_MODES, ExportFormat, EXPORT_FORMATS } from './lib/generate';
 import { applySeed } from './lib/seed';
 import { Formatting, FORMATTINGS } from './lib/variants';
 import ColumnReference from './components/ColumnReference';
@@ -85,7 +85,7 @@ function loadInitialConfig() {
     rowCount: Number.isFinite(rows) ? Math.min(MAX_ROWS, Math.max(MIN_ROWS, rows)) : 100,
     seedStr: s ? String(s.s ?? '').replace(/[^\d-]/g, '') : '42',
     sparsity: Number.isFinite(sparsity) ? Math.min(90, Math.max(0, sparsity)) : 0,
-    streamFormat: (STREAM_FORMATS.includes(s?.f as StreamFormat) ? s!.f : 'csv') as StreamFormat,
+    format: (EXPORT_FORMATS.includes(s?.f as ExportFormat) ? s!.f : 'csv') as ExportFormat,
     locale: (LOCALES.some(l => l.id === s?.l) ? s!.l! : 'en') as LocaleId,
     headerMode: (HEADER_MODES.includes(s?.h as HeaderMode) ? s!.h! : 'descriptive') as HeaderMode,
     density: DENSITIES.includes(Number(s?.d)) ? Number(s!.d) : 100,
@@ -101,8 +101,9 @@ export default function App() {
   const [generatedData, setGeneratedData] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [sparsity, setSparsity] = useState<number>(initial.sparsity);
-  const [lastRunMeta, setLastRunMeta] = useState<RunMeta | null>(null);
-  const [streamFormat, setStreamFormat] = useState<StreamFormat>(initial.streamFormat);
+  // Settings the rows in `generatedData` were generated with; they are shown only while it still matches.
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [format, setFormat] = useState<ExportFormat>(initial.format);
   const [jsonStructure, setJsonStructure] = useState<JsonStructure>('flat');
   const [nestDepth, setNestDepth] = useState<number>(3);
   const [locale, setLocale] = useState<LocaleId>(initial.locale);
@@ -171,13 +172,13 @@ export default function App() {
     r: rowCount,
     s: seedStr,
     sp: sparsity,
-    f: streamFormat,
+    f: format,
     l: locale,
     // Left out at their defaults, so links made before these settings existed stay identical.
     ...(headerMode !== 'descriptive' && { h: headerMode }),
     ...(density !== 100 && { d: density }),
     ...(formatting !== 'canonical' && { fm: formatting }),
-  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, streamFormat, locale, headerMode, density, formatting]);
+  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, format, locale, headerMode, density, formatting]);
 
   // Remember it for the next visit.
   useEffect(() => {
@@ -307,44 +308,16 @@ export default function App() {
     }
   };
 
-  const generateData = async () => {
+  // Everything that decides the values (not how they are written out). Rows already in memory
+  // are reused for another download, and shown in the table, only while this still matches.
+  const dataKey = JSON.stringify([AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id)).map(c => c.id), rowCount, seedNum, sparsity, locale, density, formatting]);
+  const hasRows = generatedData.length > 0 && generatedKey === dataKey;
+  // A JSON array has to be built whole, so a run too large for memory is written as NDJSON.
+  const effectiveFormat: ExportFormat = isLarge && format === 'json' ? 'ndjson' : format;
+
+  /** Generate the dataset in memory (up to the in-memory threshold). Returns null if cancelled or failed. */
+  const generateRows = async (): Promise<any[] | null> => {
     const columnIds = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id)).map(c => c.id);
-
-    if (isLarge) {
-      setIsGenerating(true);
-      setStreamProgress({ written: 0, total: rowCount });
-      const ac = new AbortController();
-      streamAbortRef.current = ac;
-      try {
-        await streamGenerateToFile({
-          columnIds,
-          rowCount,
-          sparsity,
-          seed: seedNum,
-          format: streamFormat,
-          locale,
-          density,
-          formatting,
-          headers: headerMode,
-          gzip,
-          signal: ac.signal,
-          onProgress: (written, total) => setStreamProgress({ written, total }),
-        });
-        setGeneratedData([]);
-        setLastRunMeta(buildRunMeta(rowCount));
-        setToast({ text: `Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}${gzip ? ' (gzip)' : ''}` });
-      } catch (err: any) {
-        if (err?.name !== 'AbortError' && err?.message !== 'Cancelled') {
-          setToast({ text: err?.message || 'Streaming generation failed.', error: true });
-        }
-      } finally {
-        setIsGenerating(false);
-        setStreamProgress(null);
-        streamAbortRef.current = null;
-      }
-      return;
-    }
-
     setIsGenerating(true);
     setStreamProgress({ written: 0, total: rowCount });
     const ac = new AbortController();
@@ -362,15 +335,66 @@ export default function App() {
         onProgress: (done, total) => setStreamProgress({ written: done, total }),
       });
       setGeneratedData(rows);
-      setLastRunMeta(buildRunMeta(rows.length));
-      setToast({ text: `Generated ${rows.length.toLocaleString()} rows · ${estimate.sizeStr}${seedNum != null ? ` · seed ${seedNum}` : ''}` });
+      setGeneratedKey(dataKey);
+      return rows;
     } catch (err: any) {
       if (err?.message !== 'Cancelled') setToast({ text: err?.message || 'Generation failed.', error: true });
+      return null;
     } finally {
       setIsGenerating(false);
       setStreamProgress(null);
       streamAbortRef.current = null;
     }
+  };
+
+  /** Show the first rows of the real dataset without downloading it. */
+  const previewRows = async () => {
+    const rows = await generateRows();
+    if (rows) setToast({ text: `Generated ${rows.length.toLocaleString()} rows${seedNum != null ? ` · seed ${seedNum}` : ''} — showing the first ${Math.min(100, rows.length)}` });
+  };
+
+  /** The one way out: generate if needed, then write the file in the chosen format. */
+  const download = async () => {
+    if (isLarge) {
+      const columnIds = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id)).map(c => c.id);
+      setIsGenerating(true);
+      setStreamProgress({ written: 0, total: rowCount });
+      const ac = new AbortController();
+      streamAbortRef.current = ac;
+      try {
+        await streamGenerateToFile({
+          columnIds,
+          rowCount,
+          sparsity,
+          seed: seedNum,
+          format: effectiveFormat as Exclude<ExportFormat, 'json'>,
+          locale,
+          density,
+          formatting,
+          headers: headerMode,
+          gzip,
+          signal: ac.signal,
+          onProgress: (written, total) => setStreamProgress({ written, total }),
+        });
+        setToast({ text: `Streamed ${rowCount.toLocaleString()} rows to file · ${effectiveFormat.toUpperCase()}${gzip ? ' (gzip)' : ''}` });
+      } catch (err: any) {
+        if (err?.name !== 'AbortError' && err?.message !== 'Cancelled') {
+          setToast({ text: err?.message || 'Streaming generation failed.', error: true });
+        }
+      } finally {
+        setIsGenerating(false);
+        setStreamProgress(null);
+        streamAbortRef.current = null;
+      }
+      return;
+    }
+    const rows = hasRows ? generatedData : await generateRows();
+    if (!rows) return;
+    if (format === 'csv') exportCSV(rows, selectedColumns, headerMode);
+    else if (format === 'json') exportJSON(rows, selectedColumns, jsonStructure, nestDepth, headerMode);
+    else if (format === 'ndjson') exportNDJSON(rows, selectedColumns, jsonStructure, nestDepth, headerMode);
+    else exportSQL(rows, selectedColumns, headerMode);
+    setToast({ text: `Downloaded ${rows.length.toLocaleString()} rows · ${format.toUpperCase()}${seedNum != null ? ` · seed ${seedNum}` : ''}` });
   };
 
   const cancelGeneration = () => {
@@ -500,18 +524,11 @@ export default function App() {
             {isLarge && (
               <div className="mt-2 space-y-2 p-2.5 rounded-md bg-amber-50 border border-amber-200">
                 <p className="text-[11px] text-amber-800 leading-snug">
-                  <strong>Large dataset:</strong> Will stream directly to a file. Live preview is disabled above {formatRows(IN_MEMORY_THRESHOLD)} rows.
+                  <strong>Large dataset:</strong> above {formatRows(IN_MEMORY_THRESHOLD)} rows the file is written as it is generated, and the table shows a live sample only.
                 </p>
-                <div className="flex gap-1">
-                  {STREAM_FORMATS.map(f => (
-                    <Button key={f} variant={streamFormat === f ? 'primary' : 'outline'} onClick={() => setStreamFormat(f)} className="flex-1">
-                      {f.toUpperCase()}
-                    </Button>
-                  ))}
-                </div>
                 {isGzipSupported() && (
                   <label className="flex items-center gap-2 text-[11px] text-amber-800 cursor-pointer select-none">
-                    <input type="checkbox" checked={gzip} onChange={e => setGzip(e.target.checked)} className="accent-indigo-600" />
+                    <input type="checkbox" data-role="gzip" checked={gzip} onChange={e => setGzip(e.target.checked)} className="accent-indigo-600" />
                     Compress as .gz (roughly half the size)
                   </label>
                 )}
@@ -899,9 +916,9 @@ export default function App() {
               </button>
             )}
             <h2 className="text-lg font-medium text-slate-800">
-              {generatedData.length > 0 ? 'Generated Data' : 'Live Preview'}
+              {hasRows ? 'Generated Data' : 'Live Preview'}
             </h2>
-            {generatedData.length > 0 && (
+            {hasRows && (
               <>
                 <span className="text-xs font-mono bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full border border-indigo-100">
                   {generatedData.length.toLocaleString()} rows
@@ -953,44 +970,13 @@ export default function App() {
             </Button>
             <Button
               size="md"
-              // The rows on screen keep the settings they were generated with; otherwise the key describes the current
-              // settings. Headers are applied at export, so they always come from the current setting.
-              onClick={() => downloadAnswerKey(selectedColumns, generatedData.length > 0 && lastRunMeta ? { ...lastRunMeta, headerMode } : buildRunMeta(rowCount))}
+              onClick={() => downloadAnswerKey(selectedColumns, buildRunMeta(rowCount))}
               disabled={selectedColumns.size === 0}
               title="Download the answer key: what each column holds, what a detector should do with it, and the settings that reproduce this dataset"
               aria-label="Answer key"
             >
               <KeyRound size={ICON.label} />
               <span className="hidden lg:inline">Answer key</span>
-            </Button>
-            <Button
-              size="md"
-              onClick={() => exportCSV(generatedData, selectedColumns, headerMode)}
-              disabled={generatedData.length === 0}
-              aria-label="Export CSV"
-            >
-              <FileSpreadsheet size={ICON.label} />
-              <span className="hidden lg:inline">CSV</span>
-            </Button>
-            <Button
-              size="md"
-              onClick={() => exportJSON(generatedData, selectedColumns, jsonStructure, nestDepth, headerMode)}
-              disabled={generatedData.length === 0}
-              title={jsonStructure === 'flat' ? 'Export JSON (flat)' : `Export JSON (${jsonStructure}${jsonStructure === 'deep' ? ` ×${nestDepth}` : ''})`}
-              aria-label="Export JSON"
-            >
-              <FileJson size={ICON.label} />
-              <span className="hidden lg:inline">JSON</span>
-            </Button>
-            <Button
-              size="md"
-              onClick={() => exportSQL(generatedData, selectedColumns, headerMode)}
-              disabled={generatedData.length === 0}
-              title="Export a SQL dump: CREATE TABLE plus INSERT statements"
-              aria-label="Export SQL"
-            >
-              <Database size={ICON.label} />
-              <span className="hidden lg:inline">SQL</span>
             </Button>
           </div>
         </header>
@@ -1098,14 +1084,14 @@ export default function App() {
               <p className="text-sm text-slate-600">Select at least one column to preview.</p>
             </div>
           ) : (() => {
-            const isLive = generatedData.length === 0;
+            const isLive = !hasRows;
             const rows = isLive ? livePreview : generatedData;
             return (
               <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col h-full">
                 {isLive && (
                   <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 text-indigo-800 text-xs flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                    <span><strong>Live sample</strong> — 5 preview rows update as you change columns/locale/seed. Hit <strong>Generate</strong> for {formatRows(rowCount)} rows.</span>
+                    <span><strong>Live sample</strong> — 5 rows that update as you change the settings. <strong>Download</strong> writes all {formatRows(rowCount)} rows{isLarge ? '' : <>; <strong>Preview</strong> shows the first 100</>}.</span>
                   </div>
                 )}
                 <div className="overflow-auto flex-1 min-h-0">
@@ -1141,7 +1127,7 @@ export default function App() {
                 </div>
                 {!isLive && generatedData.length > 100 && (
                   <div className="bg-slate-50 border-t border-slate-200 p-3 text-center text-xs text-slate-500 font-medium">
-                    Showing first 100 of {generatedData.length} records. Export to see all.
+                    Showing the first 100 of {generatedData.length.toLocaleString()} rows. Download to get them all.
                   </div>
                 )}
               </div>
@@ -1149,23 +1135,42 @@ export default function App() {
           })()}
         </div>
 
-        {/* Sticky action footer — Generate button + progress/estimate, deduped from sidebar */}
+        {/* Sticky action footer — format, the one Download button, preview, progress/estimate */}
         <div className="border-t border-slate-200 bg-white px-4 lg:px-6 py-3 flex items-center gap-2 lg:gap-3 flex-wrap flex-shrink-0 shadow-[0_-1px_2px_rgba(0,0,0,0.03)]">
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden shadow-sm" role="radiogroup" aria-label="Download format">
+            {EXPORT_FORMATS.map(f => {
+              const unavailable = isLarge && f === 'json';
+              return (
+                <button key={f} type="button" role="radio" aria-checked={effectiveFormat === f} data-format={f} disabled={unavailable}
+                  title={unavailable ? 'A JSON array cannot be written as it is generated; large runs use NDJSON' : f === 'sql' ? 'CREATE TABLE plus INSERT statements' : undefined}
+                  onClick={() => setFormat(f)}
+                  className={cn('text-sm px-3 py-2 font-medium disabled:opacity-40 disabled:cursor-not-allowed',
+                    effectiveFormat === f ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-600 hover:bg-slate-50')}>
+                  {f.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
           <Button
             variant="primary"
             size="md"
-            onClick={generateData}
+            onClick={download}
             disabled={isGenerating || selectedColumns.size === 0}
+            aria-label="Download"
           >
-            <RefreshCw size={ICON.label} className={isGenerating ? 'animate-spin' : ''} />
+            {isGenerating ? <RefreshCw size={ICON.label} className="animate-spin" /> : <Download size={ICON.label} />}
             {isGenerating
               ? streamProgress
-                ? `Streaming ${formatRows(streamProgress.written)} / ${formatRows(streamProgress.total)}`
+                ? `${formatRows(streamProgress.written)} / ${formatRows(streamProgress.total)}`
                 : 'Generating…'
-              : isLarge
-                ? `Stream ${formatRows(rowCount)} → ${streamFormat.toUpperCase()}`
-                : `Generate ${formatRows(rowCount)} rows`}
+              : `Download ${formatRows(rowCount)} rows`}
           </Button>
+          {!isLarge && (
+            <Button size="md" onClick={previewRows} disabled={isGenerating || selectedColumns.size === 0 || hasRows}
+              title="Generate the dataset and show its first 100 rows here, without downloading" aria-label="Preview rows">
+              Preview
+            </Button>
+          )}
           {selectedColumns.size > 0 && !streamProgress && (
             <div className="hidden sm:flex items-center gap-4 text-xs">
               <div className="flex flex-col leading-tight">
@@ -1210,7 +1215,7 @@ export default function App() {
 
       {toast && (
         <div role={toast.error ? 'alert' : 'status'}
-          className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto sm:max-w-md z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
+          className="fixed bottom-24 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto sm:max-w-md z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
           <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', toast.error ? 'bg-rose-400' : 'bg-emerald-400')}></span>
           <span>{toast.text}</span>
           <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white ml-1" aria-label="Dismiss">
