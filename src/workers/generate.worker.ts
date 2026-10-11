@@ -3,11 +3,13 @@ import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed } from '../lib/seed';
 import { makeRow, generateChunkText, HeaderMode, RowOptions, StreamFormat } from '../lib/generate';
 import { generateDocs, TextOptions } from '../lib/text';
+import { rowsFromManifest, Manifest } from '../lib/manifest';
 
 type In =
   | ({ type: 'memory'; columnIds: string[]; rowCount: number; seed: number | null } & RowOptions)
   | ({ type: 'init'; columnIds: string[]; seed: number | null; format: StreamFormat; headers?: HeaderMode } & RowOptions)
   | ({ type: 'text' } & TextOptions)
+  | { type: 'regenerate'; manifest: Manifest }
   | { type: 'job'; chunk: number; rows: number }
   | { type: 'cancel' };
 
@@ -43,6 +45,10 @@ ctx_self.onmessage = async (e: MessageEvent<In>) => {
       return;
     }
 
+    if (msg.type === 'regenerate') {
+      post({ type: 'done', rows: rowsFromManifest(msg.manifest) });
+      return;
+    }
     if (msg.type === 'text') {
       post({ type: 'done', rows: generateDocs(msg) });
       return;

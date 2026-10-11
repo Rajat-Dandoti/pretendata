@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github, KeyRound, Target, Ban, CircleHelp, ClipboardCheck, FileText } from 'lucide-react';
+import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github, KeyRound, Target, Ban, CircleHelp, ClipboardCheck, FileText, ShieldCheck } from 'lucide-react';
 import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES, Expectation, EXPECTATION_LABELS, expectationFor } from './data/schema';
 import { cn } from './lib/utils';
 import { Button, Chip, T, ICON, Dropdown, Tip, TIER_CHIP } from './lib/ui';
@@ -16,6 +16,7 @@ import { Formatting, FORMATTINGS } from './lib/variants';
 import ColumnReference from './components/ColumnReference';
 import Scorecard from './components/Scorecard';
 import TextPanel from './components/TextPanel';
+import MaskCheck from './components/MaskCheck';
 
 // ponytail: no more per-row left border — accent moved to a card around the whole category.
 // Kept the map deleted; category color still comes from CATEGORY_COLORS.
@@ -115,6 +116,7 @@ export default function App() {
   const [showReference, setShowReference] = useState(false);
   const [showScorecard, setShowScorecard] = useState(false);
   const [showText, setShowText] = useState(false);
+  const [showMaskCheck, setShowMaskCheck] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState<boolean>(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
     const collapsed = new Set<string>();
@@ -924,6 +926,15 @@ export default function App() {
             </Button>
             <Button
               size="md"
+              onClick={() => setShowMaskCheck(true)}
+              title="Load a masked copy of a seeded dataset and its answer key to see whether any original value survived"
+              aria-label="Check masking"
+            >
+              <ShieldCheck size={ICON.label} />
+              <span className="hidden lg:inline">Check masking</span>
+            </Button>
+            <Button
+              size="md"
               onClick={() => setShowText(true)}
               title="Generate emails, tickets, chat, clinical notes, logs and AI prompts with identifiers embedded in the text"
               aria-label="Text and prompts"
@@ -1183,6 +1194,7 @@ export default function App() {
 
       {showReference && <ColumnReference onClose={() => setShowReference(false)} locale={locale} />}
       {showScorecard && <Scorecard onClose={() => setShowScorecard(false)} />}
+      {showMaskCheck && <MaskCheck onClose={() => setShowMaskCheck(false)} />}
       {showText && <TextPanel onClose={() => setShowText(false)} seed={seedNum} locale={locale} formatting={formatting} />}
 
       <a

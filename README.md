@@ -27,6 +27,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   the settings that regenerate the exact dataset.
 - **Scorecard** — load your tool's per-column results (JSON or CSV), say what each of its labels means,
   and see recall, false positives and whether near-misses were told apart. Export as Markdown or JSON.
+- **Masking check** — load a seeded dataset's answer key and the same data after your masking or
+  tokenisation tool has run. The originals are rebuilt from the key (never uploaded) and compared: values
+  left unchanged, values that leaked into another cell, inconsistent tokens, collisions, format kept.
 - **Text and AI prompts** — emails, support tickets, chat, clinical notes, log lines and prompts with
   identifiers embedded in the prose. Each document lists its entities (start, end, type, value) as its
   own answer key, for testing mail and chat DLP, entity recognisers and AI guardrails.

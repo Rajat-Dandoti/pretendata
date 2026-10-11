@@ -1,6 +1,7 @@
 import type { LocaleId } from './locale';
 import type { Formatting } from './variants';
 import type { Doc, TextOptions } from './text';
+import type { Manifest } from './manifest';
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { csvEscape, generateChunkText, headersFor, HeaderMode, sqlCreateTable, StreamFormat, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
 import { applySeed } from './seed';
@@ -71,6 +72,11 @@ function runInWorker<T>(message: object, o: { onProgress?: (done: number, total:
 export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
   const { onProgress, signal, ...settings } = opts;
   return runInWorker({ type: 'memory', ...settings }, opts);
+}
+
+/** Rebuild a seeded dataset from its answer key in a Worker. */
+export function regenerateInWorker(manifest: Manifest): Promise<Record<string, unknown>[]> {
+  return runInWorker<Record<string, unknown>>({ type: 'regenerate', manifest }, {});
 }
 
 /** Generate text documents in a Worker. */
