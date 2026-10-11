@@ -4,6 +4,7 @@
 
 import type { StreamFormat } from './streaming';
 import type { LocaleId } from './locale';
+import type { HeaderMode } from './generate';
 
 export const SHARE_VERSION = 1;
 
@@ -14,9 +15,10 @@ export interface ShareState {
   r: number;          // rowCount
   s: string;          // seed (raw input — empty string = unset)
   sp: number;         // sparsity %
-  k: string;          // k-anonymity raw input
   f: StreamFormat;    // stream format
   l?: LocaleId;       // locale (added v1.1, optional for backward-compat)
+  h?: HeaderMode;     // header mode (optional; absent = descriptive)
+  d?: number;         // density % (optional; absent = 100)
 }
 
 // UTF-8 bytes through btoa/atob, which only take Latin-1: an imported preset can be named anything.
@@ -51,7 +53,7 @@ export function decode(hash: string): ShareState | null {
 export function _selfCheck() {
   const s: ShareState = {
     v: SHARE_VERSION, p: 'HR / Employees', c: ['firstName', 'ssn'],
-    r: 500, s: '42', sp: 5, k: '5', f: 'csv',
+    r: 500, s: '42', sp: 5, f: 'csv',
   };
   const d = decode(encode(s));
   if (!d || d.p !== s.p || d.c.length !== 2 || d.r !== 500) {

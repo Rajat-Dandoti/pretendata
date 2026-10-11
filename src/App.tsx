@@ -1,26 +1,33 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github } from 'lucide-react';
-import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES } from './data/schema';
+import { Download, Upload, Settings, RefreshCw, FileJson, FileSpreadsheet, ShieldAlert, Database, CheckSquare, Square, Library, Sliders, Link2, ChevronDown, ChevronRight, Search, Info, Globe, X, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Github, KeyRound, Target, Ban, CircleHelp, ClipboardCheck } from 'lucide-react';
+import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, ColumnDef, PRESETS, PRESET_LOCALES, Expectation, EXPECTATION_LABELS, expectationFor } from './data/schema';
 import { cn } from './lib/utils';
-import { Button, Chip, T, ICON, Dropdown, TIER_CHIP } from './lib/ui';
-import { exportCSV, exportJSON, exportPresetConfig, downloadManifest } from './lib/exporters';
+import { Button, Chip, T, ICON, Dropdown, Tip, TIER_CHIP } from './lib/ui';
+import { exportCSV, exportJSON, exportPresetConfig, downloadAnswerKey } from './lib/exporters';
 import { JsonStructure } from './lib/nesting';
-import { RunMeta, GenMode } from './lib/manifest';
+import { RunMeta } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
 import { streamGenerateToFile, StreamFormat, generateInWorker, streamPoolSize } from './lib/streaming';
-import { encode as encodeShare, decode as decodeShare, SHARE_VERSION } from './lib/share';
+import { encode as encodeShare, decode as decodeShare, SHARE_VERSION, ShareState } from './lib/share';
 import { LOCALES, LocaleId } from './lib/locale';
-import { makeRow } from './lib/generate';
+import { makeRow, headersFor, HeaderMode, HEADER_MODES } from './lib/generate';
 import { applySeed } from './lib/seed';
 import ColumnReference from './components/ColumnReference';
+import Scorecard from './components/Scorecard';
 
 // ponytail: no more per-row left border — accent moved to a card around the whole category.
 // Kept the map deleted; category color still comes from CATEGORY_COLORS.
 
-// ponytail: native title — CSS tooltip was clipping under sibling components/z-index and needed
-// per-side collision logic. `title=` is boring but bulletproof.
-function Tip({ text, children }: { text: string; children: React.ReactNode }) {
-  return <span title={text} className="inline-flex">{children}</span>;
+// What a detector should do with a column, as a quiet mark at the end of its row.
+const EXPECTATION_MARK: Record<Expectation, { Icon: typeof Target; className: string }> = {
+  detect: { Icon: Target, className: 'text-rose-300' },
+  ignore: { Icon: Ban, className: 'text-slate-300' },
+  context: { Icon: CircleHelp, className: 'text-amber-400' },
+};
+function ExpectationMark({ expectation }: { expectation: Expectation }) {
+  const { Icon, className } = EXPECTATION_MARK[expectation];
+  const label = EXPECTATION_LABELS[expectation];
+  return <span title={label} aria-label={label} className={cn('ml-auto shrink-0', className)}><Icon size={12} /></span>;
 }
 
 const MIN_ROWS = 10;
@@ -50,36 +57,68 @@ function formatRows(n: number): string {
   return String(n);
 }
 
+// Share of rows in which a should-fire column holds the real value.
+const DENSITIES = [100, 50, 25, 10, 5, 1];
+
+const CONFIG_KEY = 'pretendata:config';
+const KNOWN_COLUMN_IDS = new Set(AVAILABLE_COLUMNS.map(c => c.id));
+
+/**
+ * Starting configuration: a share link in the URL wins, then what this browser used last,
+ * then the defaults. Both sources are outside our control (hand-edited links, settings saved
+ * by an older version), so every field is checked before it is trusted.
+ */
+function loadInitialConfig() {
+  let s: ShareState | null = null;
+  try {
+    s = decodeShare(window.location.hash) ?? decodeShare(localStorage.getItem(CONFIG_KEY) ?? '');
+  } catch { /* no window (tests), or storage blocked */ }
+  const columns = s ? s.c.filter(id => KNOWN_COLUMN_IDS.has(id)) : [];
+  const rows = Math.floor(Number(s?.r));
+  const sparsity = Number(s?.sp);
+  return {
+    preset: s ? (PRESETS[s.p] ? s.p : 'Custom') : 'Common Users',
+    columns: new Set(s ? columns : PRESETS['Common Users']),
+    rowCount: Number.isFinite(rows) ? Math.min(MAX_ROWS, Math.max(MIN_ROWS, rows)) : 100,
+    seedStr: s ? String(s.s ?? '').replace(/[^\d-]/g, '') : '42',
+    sparsity: Number.isFinite(sparsity) ? Math.min(90, Math.max(0, sparsity)) : 0,
+    streamFormat: (s?.f === 'ndjson' ? 'ndjson' : 'csv') as StreamFormat,
+    locale: (LOCALES.some(l => l.id === s?.l) ? s!.l! : 'en') as LocaleId,
+    headerMode: (HEADER_MODES.includes(s?.h as HeaderMode) ? s!.h! : 'descriptive') as HeaderMode,
+    density: DENSITIES.includes(Number(s?.d)) ? Number(s!.d) : 100,
+  };
+}
+
 export default function App() {
-  const [rowCount, setRowCount] = useState<number>(100);
-  const [selectedPreset, setSelectedPreset] = useState<string>('Common Users');
-  const [selectedColumns, setSelectedColumns] = useState<Set<string>>(
-    new Set(PRESETS['Common Users'])
-  );
+  const [initial] = useState(loadInitialConfig);
+  const [rowCount, setRowCount] = useState<number>(initial.rowCount);
+  const [selectedPreset, setSelectedPreset] = useState<string>(initial.preset);
+  const [selectedColumns, setSelectedColumns] = useState<Set<string>>(initial.columns);
   const [generatedData, setGeneratedData] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [sparsity, setSparsity] = useState<number>(0);
+  const [sparsity, setSparsity] = useState<number>(initial.sparsity);
   const [lastRunMeta, setLastRunMeta] = useState<RunMeta | null>(null);
-  const [includeManifest, setIncludeManifest] = useState(false);
-  const [streamFormat, setStreamFormat] = useState<StreamFormat>('csv');
+  const [streamFormat, setStreamFormat] = useState<StreamFormat>(initial.streamFormat);
   const [jsonStructure, setJsonStructure] = useState<JsonStructure>('flat');
   const [nestDepth, setNestDepth] = useState<number>(3);
-  const [locale, setLocale] = useState<LocaleId>('en');
+  const [locale, setLocale] = useState<LocaleId>(initial.locale);
+  const [headerMode, setHeaderMode] = useState<HeaderMode>(initial.headerMode);
+  const [density, setDensity] = useState<number>(initial.density);
   const [streamProgress, setStreamProgress] = useState<{ written: number; total: number } | null>(null);
-  const [seedStr, setSeedStr] = useState<string>('42');
+  const [seedStr, setSeedStr] = useState<string>(initial.seedStr);
   const [columnSearch, setColumnSearch] = useState<string>('');
   const [showReference, setShowReference] = useState(false);
+  const [showScorecard, setShowScorecard] = useState(false);
   const [showSelectedOnly, setShowSelectedOnly] = useState<boolean>(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(() => {
-    const initial = new Set<string>();
-    const preset = new Set(PRESETS['Common Users']);
+    const collapsed = new Set<string>();
     for (const cat of Object.keys(CATEGORY_COLORS)) {
-      const hasSelected = AVAILABLE_COLUMNS.some(c => c.category === cat && preset.has(c.id));
-      if (!hasSelected) initial.add(cat);
+      const hasSelected = AVAILABLE_COLUMNS.some(c => c.category === cat && initial.columns.has(c.id));
+      if (!hasSelected) collapsed.add(cat);
     }
-    return initial;
+    return collapsed;
   });
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
   // ponytail: single slot, not two booleans — only one off-canvas drawer can be open at a time on mobile.
   const [mobileDrawer, setMobileDrawer] = useState<'settings' | 'columns' | null>(null);
   // Independent of mobileDrawer — at lg+ each sidebar can be collapsed to reclaim width for the table.
@@ -92,9 +131,9 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
 
-  // Auto-dismiss the post-generate toast.
+  // Auto-dismiss the post-generate toast. Errors stay until dismissed — they need reading.
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || toast.error) return;
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
@@ -116,32 +155,28 @@ export default function App() {
     return () => document.removeEventListener('mousedown', h);
   }, [showCompliance]);
 
-  // Hydrate from #hash on mount (shareable seed URL).
+  // The current configuration, as a share link encodes it.
+  const configHash = useMemo(() => encodeShare({
+    v: SHARE_VERSION,
+    p: selectedPreset,
+    c: Array.from(selectedColumns),
+    r: rowCount,
+    s: seedStr,
+    sp: sparsity,
+    f: streamFormat,
+    l: locale,
+    // Left out at their defaults, so links made before these settings existed stay identical.
+    ...(headerMode !== 'descriptive' && { h: headerMode }),
+    ...(density !== 100 && { d: density }),
+  }), [selectedPreset, selectedColumns, rowCount, seedStr, sparsity, streamFormat, locale, headerMode, density]);
+
+  // Remember it for the next visit.
   useEffect(() => {
-    const s = decodeShare(window.location.hash);
-    if (!s) return;
-    if (s.p && PRESETS[s.p]) setSelectedPreset(s.p);
-    else setSelectedPreset('Custom');
-    setSelectedColumns(new Set(s.c));
-    setRowCount(s.r);
-    setSeedStr(s.s);
-    setSparsity(s.sp);
-    setStreamFormat(s.f);
-    if (s.l) setLocale(s.l);
-  }, []);
+    try { localStorage.setItem(CONFIG_KEY, configHash); } catch { /* storage blocked or full */ }
+  }, [configHash]);
 
   const handleCopyShareLink = async () => {
-    const hash = encodeShare({
-      v: SHARE_VERSION,
-      p: selectedPreset,
-      c: Array.from(selectedColumns),
-      r: rowCount,
-      s: seedStr,
-      sp: sparsity,
-      k: '1',
-      f: streamFormat,
-      l: locale,
-    });
+    const hash = configHash;
     const url = `${window.location.origin}${window.location.pathname}#${hash}`;
     try {
       await navigator.clipboard.writeText(url);
@@ -158,12 +193,15 @@ export default function App() {
     return Number.isFinite(n) ? Math.floor(n) : null;
   })();
 
-  const buildRunMeta = (mode: GenMode, effectiveRowCount: number): RunMeta => ({
+  // Runs above the in-memory threshold are streamed, and streamed files are seeded per chunk.
+  const buildRunMeta = (rows: number): RunMeta => ({
     seed: seedNum,
-    rowCount: effectiveRowCount,
+    rowCount: rows,
     sparsityPct: sparsity,
-    kAnonymity: null,
-    mode,
+    locale,
+    seeding: rows > IN_MEMORY_THRESHOLD ? 'chunked' : 'whole',
+    densityPct: density,
+    headerMode,
   });
 
   // Group columns by category
@@ -211,8 +249,8 @@ export default function App() {
     // ponytail: reuse makeRow — the preview was a copy of it that drifted (it never
     // seeded Math.random, so checksum columns ignored the seed).
     applySeed(seedNum);
-    return Array.from({ length: 5 }, () => makeRow(cols, sparsity, locale));
-  }, [selectedColumns, locale, sparsity, seedNum]);
+    return Array.from({ length: 5 }, () => makeRow(cols, sparsity, locale, density));
+  }, [selectedColumns, locale, sparsity, seedNum, density]);
 
   // ponytail: crude est ≈ cols × 22 B/cell for CSV; time ≈ 3µs/row + 1.5µs/cell per core
   // (measured on an M-series laptop), split across the worker pool when streaming.
@@ -275,17 +313,17 @@ export default function App() {
           seed: seedNum,
           format: streamFormat,
           locale,
+          density,
+          headers: headerMode,
           signal: ac.signal,
           onProgress: (written, total) => setStreamProgress({ written, total }),
         });
         setGeneratedData([]);
-        const meta = buildRunMeta('offline', rowCount);
-        setLastRunMeta(meta);
-        setToast(`Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}${includeManifest ? ' · manifest saved separately' : ''}`);
-        if (includeManifest) downloadManifest(`pretendata.${streamFormat}`, selectedColumns, meta);
+        setLastRunMeta(buildRunMeta(rowCount));
+        setToast({ text: `Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}` });
       } catch (err: any) {
         if (err?.name !== 'AbortError' && err?.message !== 'Cancelled') {
-          alert(err?.message || 'Streaming generation failed.');
+          setToast({ text: err?.message || 'Streaming generation failed.', error: true });
         }
       } finally {
         setIsGenerating(false);
@@ -306,14 +344,15 @@ export default function App() {
         sparsity,
         seed: seedNum,
         locale,
+        density,
         signal: ac.signal,
         onProgress: (done, total) => setStreamProgress({ written: done, total }),
       });
       setGeneratedData(rows);
-      setLastRunMeta(buildRunMeta('offline', rows.length));
-      setToast(`Generated ${rows.length.toLocaleString()} rows · ${estimate.sizeStr}${seedNum != null ? ` · seed ${seedNum}` : ''}`);
+      setLastRunMeta(buildRunMeta(rows.length));
+      setToast({ text: `Generated ${rows.length.toLocaleString()} rows · ${estimate.sizeStr}${seedNum != null ? ` · seed ${seedNum}` : ''}` });
     } catch (err: any) {
-      if (err?.message !== 'Cancelled') alert(err?.message || 'Generation failed.');
+      if (err?.message !== 'Cancelled') setToast({ text: err?.message || 'Generation failed.', error: true });
     } finally {
       setIsGenerating(false);
       setStreamProgress(null);
@@ -344,7 +383,7 @@ export default function App() {
           setGeneratedData([]); // column shape changed — same reason as handleToggleColumn
         }
       } catch (err) {
-        alert("Invalid preset file.");
+        setToast({ text: 'That file is not a valid preset.', error: true });
       }
     };
     reader.readAsText(file);
@@ -353,6 +392,8 @@ export default function App() {
   };
 
   const activeCols = AVAILABLE_COLUMNS.filter(c => selectedColumns.has(c.id));
+  // What the exported file will call each column.
+  const activeHeaders = headersFor(activeCols, headerMode);
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
@@ -484,13 +525,13 @@ export default function App() {
 
           {/* Locale Selection */}
           <div className="space-y-2">
-            <label className={cn(T.label, 'flex items-center gap-2')}>
+            <span className={cn(T.label, 'flex items-center gap-2')}>
               <Globe size={ICON.label} className="text-slate-400" />
               Locale
               <Tip text="Affects names, addresses, mobile numbers, and job-related fields. Mobile numbers use real prefixes and formats for the region. Region-focused presets (India PII, US Healthcare…) set this for you. Region-specific identifiers (Aadhaar, NHS, SSN…) keep their fixed locale.">
                 <Info size={ICON.micro} className="text-slate-400" />
               </Tip>
-            </label>
+            </span>
             <Dropdown
               value={locale}
               onChange={(v) => setLocale(v as LocaleId)}
@@ -523,6 +564,36 @@ export default function App() {
                 <input type="range" min="0" max="90" step="5" value={sparsity}
                   onChange={(e) => setSparsity(parseInt(e.target.value))}
                   className="w-full accent-indigo-600" />
+              </div>
+              <div className="space-y-2">
+                <span className={cn(T.body, 'font-medium flex items-center gap-1.5')}>
+                  Identifier density
+                  <Tip text="Share of rows in which a should-fire column holds the real identifier; the other rows hold harmless filler. Lower it to test scanners that sample rows instead of reading every one.">
+                    <Info size={ICON.micro} className="text-slate-400" />
+                  </Tip>
+                </span>
+                <Dropdown
+                  value={String(density)}
+                  onChange={(v) => { setDensity(Number(v)); setGeneratedData([]); /* different values — fall back to the live preview */ }}
+                  options={DENSITIES.map(d => ({ value: String(d), label: d === 100 ? 'Every row' : `${d}% of rows` }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <span className={cn(T.body, 'font-medium flex items-center gap-1.5')}>
+                  Headers
+                  <Tip text="What the file calls each column. Neutral hides every name, so only the values can give a column away. Misleading puts each real name on a different column, to catch detectors that trust headers. Applies to CSV and flat JSON; the answer key records which header holds what.">
+                    <Info size={ICON.micro} className="text-slate-400" />
+                  </Tip>
+                </span>
+                <Dropdown<HeaderMode>
+                  value={headerMode}
+                  onChange={setHeaderMode}
+                  options={[
+                    { value: 'descriptive', label: 'Descriptive (real names)' },
+                    { value: 'neutral', label: 'Neutral (col_01, col_02 …)' },
+                    { value: 'misleading', label: 'Misleading (names swapped)' },
+                  ]}
+                />
               </div>
               <div className="space-y-2">
                 <span className={cn(T.body, 'font-medium block')}>Seed <span className="font-normal text-slate-400">(optional)</span></span>
@@ -721,6 +792,7 @@ export default function App() {
                         <span className={cn("text-sm truncate", isSelected ? "text-slate-700" : "text-slate-500")}>
                           {col.name}
                         </span>
+                        <ExpectationMark expectation={expectationFor(col)} />
                       </button>
                     );
                   };
@@ -753,7 +825,7 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 min-w-0 flex flex-col h-full bg-slate-50/50">
         {/* Header */}
-        <header className="min-h-16 lg:h-16 border-b border-slate-200 bg-white flex items-center justify-between px-4 lg:px-8 py-2 lg:py-0 flex-wrap gap-y-2 flex-shrink-0">
+        <header className="min-h-16 border-b border-slate-200 bg-white flex items-center justify-between px-4 lg:px-8 py-2 flex-wrap gap-x-4 gap-y-2 flex-shrink-0">
           <div className="flex items-center gap-2 lg:gap-3">
             <button
               type="button"
@@ -813,6 +885,16 @@ export default function App() {
           <div className="flex items-center gap-2 lg:gap-3 flex-wrap">
             <Button
               size="md"
+              variant="ghost"
+              onClick={() => setShowScorecard(true)}
+              title="Load a detection tool's results for this data and see where it was right"
+              aria-label="Score a tool"
+            >
+              <ClipboardCheck size={ICON.label} />
+              <span className="hidden lg:inline">Score a tool</span>
+            </Button>
+            <Button
+              size="md"
               onClick={handleCopyShareLink}
               title="Copy a URL that reproduces this exact config (preset, columns, rows, seed, sparsity, stream format)"
               aria-label="Copy link"
@@ -820,24 +902,21 @@ export default function App() {
               <Link2 size={ICON.label} />
               <span className="hidden lg:inline">Copy link</span>
             </Button>
-            <label
-              title={isLarge
-                ? 'Download a sidecar manifest describing columns/categories/regions as a separate .manifest.json once the stream finishes'
-                : 'Bundle a sidecar manifest describing columns/categories/regions next to the data, packed as a zip'}
-              className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 bg-white shadow-sm hover:bg-slate-50"
-            >
-              <input
-                type="checkbox"
-                checked={includeManifest}
-                onChange={e => setIncludeManifest(e.target.checked)}
-                className="accent-slate-700"
-              />
-              <span className="hidden lg:inline">DLP manifest{isLarge ? '' : ' (.zip)'}</span>
-              <span className="lg:hidden">{isLarge ? 'Manifest' : 'ZIP'}</span>
-            </label>
             <Button
               size="md"
-              onClick={() => exportCSV(generatedData, selectedColumns, includeManifest ? (lastRunMeta ?? undefined) : undefined)}
+              // The rows on screen keep the settings they were generated with; otherwise the key describes the current
+              // settings. Headers are applied at export, so they always come from the current setting.
+              onClick={() => downloadAnswerKey(selectedColumns, generatedData.length > 0 && lastRunMeta ? { ...lastRunMeta, headerMode } : buildRunMeta(rowCount))}
+              disabled={selectedColumns.size === 0}
+              title="Download the answer key: what each column holds, what a detector should do with it, and the settings that reproduce this dataset"
+              aria-label="Answer key"
+            >
+              <KeyRound size={ICON.label} />
+              <span className="hidden lg:inline">Answer key</span>
+            </Button>
+            <Button
+              size="md"
+              onClick={() => exportCSV(generatedData, selectedColumns, headerMode)}
               disabled={generatedData.length === 0}
               aria-label="Export CSV"
             >
@@ -846,7 +925,7 @@ export default function App() {
             </Button>
             <Button
               size="md"
-              onClick={() => exportJSON(generatedData, selectedColumns, includeManifest ? (lastRunMeta ?? undefined) : undefined, jsonStructure, nestDepth)}
+              onClick={() => exportJSON(generatedData, selectedColumns, jsonStructure, nestDepth, headerMode)}
               disabled={generatedData.length === 0}
               title={jsonStructure === 'flat' ? 'Export JSON (flat)' : `Export JSON (${jsonStructure}${jsonStructure === 'deep' ? ` ×${nestDepth}` : ''})`}
               aria-label="Export JSON"
@@ -975,10 +1054,10 @@ export default function App() {
                     <thead className="sticky top-0 bg-slate-50 z-10 shadow-sm">
                       <tr>
                         <th className="px-4 py-3 border-b border-slate-200 font-medium text-slate-500 w-16 text-center sticky left-0 bg-slate-50 z-20">#</th>
-                        {activeCols.map(col => (
+                        {activeCols.map((col, i) => (
                           <th key={col.id} className="px-4 py-3 border-b border-slate-200 font-medium text-slate-700 whitespace-nowrap">
                             <div className="flex flex-col gap-1">
-                              <span>{col.name}</span>
+                              <span title={headerMode === 'descriptive' ? undefined : `Holds: ${col.name}`}>{activeHeaders[i]}</span>
                               <Chip className={cn("w-fit", CATEGORY_COLORS[col.category])}>{col.category}</Chip>
                             </div>
                           </th>
@@ -1055,6 +1134,7 @@ export default function App() {
       </div>
 
       {showReference && <ColumnReference onClose={() => setShowReference(false)} locale={locale} />}
+      {showScorecard && <Scorecard onClose={() => setShowScorecard(false)} />}
 
       <a
         href="https://github.com/Rajat-Dandoti/pretendata"
@@ -1068,9 +1148,10 @@ export default function App() {
       </a>
 
       {toast && (
-        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
-          <span>{toast}</span>
+        <div role={toast.error ? 'alert' : 'status'}
+          className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 sm:w-auto sm:max-w-md z-50 flex items-center gap-3 bg-slate-900 text-white text-sm px-4 py-3 rounded-lg shadow-lg">
+          <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', toast.error ? 'bg-rose-400' : 'bg-emerald-400')}></span>
+          <span>{toast.text}</span>
           <button onClick={() => setToast(null)} className="text-slate-400 hover:text-white ml-1" aria-label="Dismiss">
             <X size={14} />
           </button>

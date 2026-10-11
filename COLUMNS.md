@@ -31,9 +31,30 @@ the value. Ordered loudest → quietest.
 
 ---
 
+## Expectation
+
+What a detector should do with a column. It is what the scorecard grades against, and it is written
+to the answer key for every column.
+
+| Expectation | Meaning | Scored as |
+|---|---|---|
+| `detect` (should fire) | Sensitive; a detector should flag it | Correct, flagged generically, or missed |
+| `ignore` (should not fire) | Benign, or shaped like an identifier but deliberately not one | Quiet, soft flag, or false positive |
+| `context` (depends on context) | Sensitive only in combination or by policy | Reported, never scored |
+
+It follows from the category: PII, PHI, PCI, Secrets and Biometric are `detect`; Network and
+Quasi-Identifier are `context`; the rest are `ignore`. A few columns are overridden in
+`EXPECTATION_OVERRIDES` in `schema.ts`:
+
+- `detect`: `gstin`, `vin`, `imei`, `vehicleRegIndia` (registered identifiers filed under
+  Quasi-Identifier), `ipv6Address`, `sessionCookie`.
+- `context`: `employeeId`, `studentId`, `crmId` (assigned to one person, meaningless elsewhere), `age`.
+
+---
+
 ## Validation contract (`ValidationKind`)
 
-Emitted into the export **manifest sidecar** so a test harness knows what guarantee each value holds.
+Emitted into the **answer key** so a test harness knows what guarantee each value holds.
 
 | Kind | Meaning |
 |---|---|
@@ -266,8 +287,9 @@ Education / Students, Technical / IT.
 1. Add one `ColumnDef` to `AVAILABLE_COLUMNS` in `schema.ts` (`id`, `name`, `category`, `generate`, `defaultSelected`).
 2. If it's region-specific or checksum-bearing, add a `COLUMN_DLP_META[id]` entry (`region`, `validation`).
 3. New checksum? Add the generator + validator to `validators.ts` and an assert to its `_selfCheck()`.
-4. New category? Add it to the `PrivacyCategory` union **and** `CATEGORY_COLORS` — the UI, exports,
-   and manifest all read generically, so nothing else changes.
+4. New category? Add it to the `PrivacyCategory` union, `CATEGORY_COLORS` **and**
+   `CATEGORY_EXPECTATION` — the UI, exports and answer key all read generically, so nothing else changes.
+   If the category's default expectation is wrong for the new column, add it to `EXPECTATION_OVERRIDES`.
 5. Document it in this file — `npm test` fails if a column id or preset name is missing here, or if a
    Column Reference pattern does not match what its column emits.
 6. `npm run lint && npm test`.

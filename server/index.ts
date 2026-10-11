@@ -5,9 +5,9 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PRESETS, PRESET_LOCALES } from '../src/data/schema';
+import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PRESETS, PRESET_LOCALES, expectationFor } from '../src/data/schema';
 import { frameworksFor } from '../src/lib/frameworks';
-import { generateRows, rowsToCSV } from '../src/lib/generate';
+import { generateRows, rowsToCSV, rekeyRows, HEADER_MODES, HeaderMode } from '../src/lib/generate';
 import { nestRows, JsonStructure } from '../src/lib/nesting';
 import type { LocaleId } from '../src/lib/locale';
 
@@ -32,7 +32,7 @@ app.use('/api/*', async (c, next) => {
 app.get('/api/columns', (c) => c.json({
   categories: CATEGORY_COLORS,
   columns: AVAILABLE_COLUMNS.map((c) =>
-    ({ id: c.id, name: c.name, category: c.category, region: c.region, validation: c.validation, frameworks: frameworksFor(c) })),
+    ({ id: c.id, name: c.name, category: c.category, region: c.region, validation: c.validation, expectation: expectationFor(c), frameworks: frameworksFor(c) })),
 }));
 
 app.get('/api/presets', (c) => c.json(PRESETS));
@@ -46,6 +46,8 @@ interface GenBody {
   seed?: number | null;
   locale?: LocaleId;
   format?: 'json' | 'csv' | 'ndjson';
+  density?: number;           // % of rows where a should-fire column holds the real value (1–100)
+  headers?: HeaderMode;       // descriptive | neutral | misleading (CSV and flat JSON/NDJSON)
   structure?: JsonStructure;  // JSON/NDJSON nesting: flat | grouped | semantic | deep
   nestingDepth?: number;      // depth for 'deep'
 }
@@ -67,11 +69,14 @@ function resolveGenerate(body: GenBody): { error: string } | { columnIds: string
   const sparsity = Number(body.sparsity ?? 0);
   if (!Number.isFinite(sparsity) || sparsity < 0 || sparsity > 100) return { error: 'sparsity must be 0–100' };
   if (body.seed != null && !Number.isFinite(body.seed)) return { error: 'seed must be a number' };
+  const density = Number(body.density ?? 100);
+  if (!Number.isFinite(density) || density < 1 || density > 100) return { error: 'density must be 1–100' };
+  if (body.headers != null && !HEADER_MODES.includes(body.headers)) return { error: `headers must be one of: ${HEADER_MODES.join(', ')}` };
 
   // Region-focused presets carry a locale, same as the UI. An explicit `locale` still wins.
   const locale = body.locale ?? (body.preset ? PRESET_LOCALES[body.preset] : undefined);
 
-  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale });
+  const rows = generateRows({ columnIds, rowCount, sparsity, seed: body.seed ?? null, locale, density });
   return { columnIds, rows };
 }
 
@@ -84,11 +89,13 @@ app.post('/api/generate', async (c) => {
 
   const format = body.format ?? 'json';
   const structure = body.structure ?? 'flat';
-  if (format === 'json') return c.json(nestRows(res.rows, structure, body.nestingDepth));
   const cols = AVAILABLE_COLUMNS.filter(col => res.columnIds.includes(col.id));
-  if (format === 'csv') return c.body(rowsToCSV(res.rows, cols), 200, { 'content-type': 'text/csv; charset=utf-8' });
+  // Header modes rename flat output only; nested structures are named after what they hold.
+  const shaped = () => (structure === 'flat' ? rekeyRows(res.rows, cols, body.headers) : nestRows(res.rows, structure, body.nestingDepth));
+  if (format === 'json') return c.json(shaped());
+  if (format === 'csv') return c.body(rowsToCSV(res.rows, cols, body.headers), 200, { 'content-type': 'text/csv; charset=utf-8' });
   if (format === 'ndjson') {
-    const nested = nestRows(res.rows, structure, body.nestingDepth);
+    const nested = shaped();
     return c.body(nested.map(r => JSON.stringify(r)).join('\n') + (nested.length ? '\n' : ''), 200, { 'content-type': 'application/x-ndjson' });
   }
   return c.json({ error: `unknown format: ${format}` }, 400);

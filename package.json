@@ -6,14 +6,15 @@
   "description": "Generate synthetic, privacy-safe test data (checksum-valid IDs, DLP false-positive controls, compliance tagging) for QA and DLP/DSPM testing.",
   "license": "MIT",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "vite --port=5173 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "tsx src/lib/_selftest.ts",
     "server": "tsx watch server/index.ts",
-    "dev:all": "tsx watch server/index.ts & vite --port=3000 --host=0.0.0.0; kill $!"
+    "dev:all": "tsx watch server/index.ts & vite --port=5173 --host=0.0.0.0; kill $!",
+    "smoke": "vite build && node smoke/run.mjs"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",

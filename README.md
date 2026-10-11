@@ -7,6 +7,9 @@ data that *looks* sensitive but identifies no real person, so you can exercise d
 and classification tools without touching production data. Every value runs client-side — nothing you
 generate ever leaves your machine.
 
+The loop it is built for: **generate** a dataset whose right answers are known, run your detection
+tool over it, then **score** the tool's output against the answer key.
+
 🔗 **Live demo:** <https://pretendata.voidkit.workers.dev/>
 
 For the exact shape, algorithm, and validation contract of every column, see **[COLUMNS.md](COLUMNS.md)**.
@@ -18,6 +21,12 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   controls), and **Chaos** (malformed / hostile values).
 - **Checksum-valid identifiers** so real detectors actually match — Aadhaar (Verhoeff), IBAN (mod-97),
   IMEI/NPI (Luhn), NHS (mod-11), GSTIN (mod-36), VIN, EAN-13, ISIN, Saudi Iqama (Luhn), and more.
+- **An expectation on every column** — should fire, should not fire, or depends on context — shown in
+  the picker and written to the answer key.
+- **Answer key** — one click downloads what each column holds, what a detector should do with it, and
+  the settings that regenerate the exact dataset.
+- **Scorecard** — load your tool's per-column results (JSON or CSV), say what each of its labels means,
+  and see recall, false positives and whether near-misses were told apart. Export as Markdown or JSON.
 - **Near-miss / DLP-Negative controls** — the same identifiers with the check digit deliberately broken,
   to measure a detector's false-positive rate.
 - **Secret-scanner bait** — AWS/GitHub/Stripe/Google keys, JWT, bcrypt, PEM, basic-auth URLs in vendor-accurate shapes.
@@ -31,9 +40,12 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   locale support, shareable config links, and large-dataset streaming (up to 100M rows) to a single
   file in any browser.
 - Responsive layout — off-canvas sidebars on mobile, collapsible panels on desktop.
-- Export to **CSV / JSON / NDJSON** with an optional DLP manifest sidecar (zipped with the data; a
-  separate `.manifest.json` for streamed runs). CSV files start with a UTF-8 BOM so Excel reads
-  non-ASCII names correctly.
+- **Harder tests from two settings** — *Headers*: descriptive, neutral (`col_01` …) or misleading (real
+  names on the wrong columns), to see whether a tool reads values or trusts column names.
+  *Identifier density*: real identifiers in only 50% down to 1% of rows, to test scanners that sample.
+- Export to **CSV / JSON / NDJSON**. CSV files start with a UTF-8 BOM so Excel reads non-ASCII names
+  correctly.
+- Remembers your last settings in the browser; a share link always wins over them.
 
 ## Quick start
 
@@ -42,7 +54,14 @@ npm install
 npm run dev
 ```
 
-Open the local URL it prints (e.g. `http://localhost:3000`). That's it — the app is fully client-side.
+Open the local URL it prints (e.g. `http://localhost:5173`). That's it — the app is fully client-side.
+
+## Nothing leaves your machine — check it yourself
+
+The site is served with a content security policy ([`public/_headers`](public/_headers)) that allows
+connections, scripts, workers and frames from its own origin only. Open your browser's network panel,
+generate and download a dataset, and you will see no request to any other host. `npm run smoke` asserts
+the same thing in headless Chrome.
 
 ## Large datasets (>100k rows)
 
@@ -57,7 +76,8 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
   multi-hour runs prefer `npm run build && npm run preview` (or the live demo) over `npm run dev`,
   whose dev server reloads the page when it reconnects.
 - **Seeds** — streamed output is seeded per 5,000-row chunk, so the same seed and row count always
-  reproduce the same file. Seeded files above 100k rows made before this scheme do not match.
+  reproduce the same file. `npm test` pins a hash of seeded output, so a change to it is always deliberate
+  and comes with a bump of `GENERATOR_VERSION`, which the answer key records. Seeded files above 100k rows made before this scheme do not match.
 - **Seeded dates** — with a seed, relative dates (date of birth, age, created-at, hire date, last
   login, graduation year) are measured from a fixed reference date, 2026-01-01 UTC, not today, so
   the output is the same on any day. Leave the seed blank for dates relative to now.
@@ -70,7 +90,8 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
 | `npm run build` | Production build → `dist/` |
 | `npm run preview` | Preview the production build |
 | `npm run lint` | TypeScript type-check (`tsc --noEmit`) |
-| `npm test` | Self-checks: checksum round-trips, format asserts, seed reproducibility, the streaming writer, and that COLUMNS.md covers every column |
+| `npm test` | Self-checks: checksum round-trips, format asserts, the pinned seed contract, the streaming writer, the answer key, the scorecard, and that COLUMNS.md covers every column |
+| `npm run smoke` | Builds, then drives the real app in headless Chrome: generate, export, both large-file paths, keyboard use, answer key, scorecard. Needs Chrome; set `CHROME` to its path if it is not found |
 | `npm run server` | Optional API server (see below) |
 
 ## Deploy (free, static)
@@ -83,7 +104,7 @@ The site is static — build it and drop `dist/` on any static host.
 
 This is a single-page app — the host needs to fall back to `index.html` for unknown paths (Cloudflare
 Pages/Workers and Netlify do this automatically for a Vite SPA; GitHub Pages needs a `base` path in
-`vite.config.ts` plus a deploy action). `public/` ships `sw.js` + `mitm.html` — a self-hosted
+`vite.config.ts` plus a deploy action). `public/` ships `_headers` (the content security policy, read by Cloudflare) and `sw.js` + `mitm.html` + `mitm.js` — a self-hosted
 [streamsaver](https://github.com/jimmywarting/StreamSaver.js) service worker used as the >100k-row
 export fallback in browsers without the File System Access API — make sure your host serves these as
 static files at the site root.
@@ -94,11 +115,12 @@ The generator is also exposed over HTTP for automation (scripts, CI, seeding a d
 does not need it.** Run `npm run server` (Hono, port 8787). In production it can also serve the built
 SPA from `dist/`.
 
-- `GET /api/columns` — column catalog (id, name, category, region, validation, framework tags) + colors.
+- `GET /api/columns` — column catalog (id, name, category, region, validation, expectation, framework tags) + colors.
 - `GET /api/presets` — named column bundles.
-- `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, format?, structure?, nestingDepth? }`.
+- `POST /api/generate` — body: `{ columnIds?|preset?, rowCount, sparsity?, seed?, locale?, density?, headers?, format?, structure?, nestingDepth? }`.
   `format` ∈ `json` (default) · `csv` · `ndjson`; `structure` ∈ `flat` · `grouped` · `semantic` · `deep`;
-  `rowCount` is an integer up to 100,000; `nestingDepth` is clamped to 1–10.
+  `rowCount` is an integer up to 100,000; `nestingDepth` is clamped to 1–10; `density` is 1–100;
+  `headers` ∈ `descriptive` · `neutral` · `misleading` (CSV and flat JSON/NDJSON).
 
 ```bash
 curl -X POST localhost:8787/api/generate -H 'content-type: application/json' \

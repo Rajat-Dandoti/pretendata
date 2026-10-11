@@ -1,9 +1,16 @@
 // Shared generation core — pure TS, runs in the browser worker AND the Node API server.
 // Keep this free of DOM/worker globals so both consumers can import it.
-import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
+import { AVAILABLE_COLUMNS, ColumnDef, expectationFor } from '../data/schema';
 import { applySeed, SEED_REF_DATE } from './seed';
 import { getFaker, resolveLocale, sexLabel, LocaleId } from './locale';
 import { luhnValid, vinValid } from './validators';
+
+/**
+ * Version of the seed contract: for a given (seed, settings), which bytes come out.
+ * Bump it whenever a change alters seeded output — `npm test` pins a hash of that output
+ * and fails until both are updated together. Recorded in the manifest and share links.
+ */
+export const GENERATOR_VERSION = 1;
 
 /** Leads every CSV file we write, so Excel reads non-ASCII names (German, Japanese…) as UTF-8. */
 export const UTF8_BOM = '\uFEFF';
@@ -17,8 +24,47 @@ export function csvEscape(val: any): string {
   return s;
 }
 
-/** Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx. */
-export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): Record<string, any> {
+// ---------- headers ----------
+/**
+ * What the output calls each column.
+ *   descriptive: its real name — a detector may lean on it
+ *   neutral:     col_01, col_02 … — only the values can give a column away
+ *   misleading:  real names, each on a different column — a detector that trusts headers is led astray
+ */
+export type HeaderMode = 'descriptive' | 'neutral' | 'misleading';
+export const HEADER_MODES: HeaderMode[] = ['descriptive', 'neutral', 'misleading'];
+
+/** One header per column: display names for CSV (`name`), ids for JSON keys (`id`). */
+export function headersFor(cols: ColumnDef[], mode: HeaderMode = 'descriptive', kind: 'name' | 'id' = 'name'): string[] {
+  const own = cols.map(c => (kind === 'name' ? c.name : c.id));
+  if (mode === 'neutral') {
+    const width = Math.max(2, String(cols.length).length);
+    return cols.map((_, i) => `col_${String(i + 1).padStart(width, '0')}`);
+  }
+  if (mode === 'misleading') {
+    // Rotate by half the width: no column keeps its own name, and most land in another category.
+    const shift = Math.ceil(cols.length / 2);
+    return cols.map((_, i) => own[(i + shift) % cols.length]);
+  }
+  return own;
+}
+
+/** Rows re-keyed for JSON output under a header mode. Descriptive rows pass through untouched. */
+export function rekeyRows(rows: Record<string, any>[], cols: ColumnDef[], mode: HeaderMode = 'descriptive'): Record<string, any>[] {
+  if (mode === 'descriptive') return rows;
+  const keys = headersFor(cols, mode, 'id');
+  return rows.map(r => Object.fromEntries(cols.map((c, i) => [keys[i], r[c.id]])));
+}
+
+// Columns a detector should fire on: the only ones density thins out.
+const DETECT_IDS = new Set(AVAILABLE_COLUMNS.filter(c => expectationFor(c) === 'detect').map(c => c.id));
+
+/**
+ * Build one row. Row-consistent fields (name/dob/age/gender) come from a shared ctx.
+ * `density` (1–100) is the share of rows in which a should-fire column holds the real value;
+ * the rest get harmless filler, to test scanners that sample rows instead of reading them all.
+ */
+export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId, density = 100): Record<string, any> {
   // 'mix' is resolved once per row so the phone number matches the row's name/address.
   const rowLocale = resolveLocale(locale);
   const f = getFaker(rowLocale);
@@ -42,7 +88,9 @@ export function makeRow(cols: ColumnDef[], sparsity: number, locale: LocaleId): 
   };
   const row: Record<string, any> = {};
   for (const col of cols) {
-    row[col.id] = sparsity > 0 && Math.random() < sparsity / 100 ? null : col.generate(fctx);
+    row[col.id] = sparsity > 0 && Math.random() < sparsity / 100 ? null
+      : density < 100 && DETECT_IDS.has(col.id) && Math.random() >= density / 100 ? f.commerce.productName()
+      : col.generate(fctx);
   }
   return row;
 }
@@ -66,14 +114,22 @@ export interface ChunkOptions {
   sparsity: number;
   locale: LocaleId;
   format: 'csv' | 'ndjson';
+  density?: number;
+  headers?: HeaderMode;
 }
 
-/** Serialized text of one stream chunk (no header). Unseeded runs keep the caller's entropy. */
-export function generateChunkText(cols: ColumnDef[], o: ChunkOptions): string {
+/** The rows of one stream chunk. Unseeded runs keep the caller's entropy. */
+export function generateChunkRows(cols: ColumnDef[], o: Omit<ChunkOptions, 'format' | 'headers'>): Record<string, any>[] {
   if (o.seed !== null) applySeed(chunkSeed(o.seed, o.chunk));
+  const out = new Array(o.rows);
+  for (let i = 0; i < o.rows; i++) out[i] = makeRow(cols, o.sparsity, o.locale, o.density);
+  return out;
+}
+
+/** Serialized text of one stream chunk (no header). */
+export function generateChunkText(cols: ColumnDef[], o: ChunkOptions): string {
   let buf = '';
-  for (let i = 0; i < o.rows; i++) {
-    const r = makeRow(cols, o.sparsity, o.locale);
+  for (const r of rekeyRows(generateChunkRows(cols, o), cols, o.format === 'ndjson' ? o.headers : 'descriptive')) {
     buf += (o.format === 'csv' ? cols.map(c => csvEscape(r[c.id])).join(',') : JSON.stringify(r)) + '\n';
   }
   return buf;
@@ -85,6 +141,7 @@ export interface GenerateOptions {
   sparsity?: number;
   seed?: number | null;
   locale?: LocaleId;
+  density?: number;
 }
 
 /** Whole-array generation (in-memory). Applies the seed, then builds rowCount rows. */
@@ -94,13 +151,13 @@ export function generateRows(opts: GenerateOptions): Record<string, any>[] {
   const sparsity = opts.sparsity ?? 0;
   const locale = opts.locale ?? 'en';
   const out = new Array(opts.rowCount);
-  for (let i = 0; i < opts.rowCount; i++) out[i] = makeRow(cols, sparsity, locale);
+  for (let i = 0; i < opts.rowCount; i++) out[i] = makeRow(cols, sparsity, locale, opts.density);
   return out;
 }
 
-/** CSV with a header row of column display names. */
-export function rowsToCSV(rows: Record<string, any>[], cols: ColumnDef[]): string {
-  const header = cols.map(c => csvEscape(c.name)).join(',');
+/** CSV with a header row: column display names, unless a header mode says otherwise. */
+export function rowsToCSV(rows: Record<string, any>[], cols: ColumnDef[], headers: HeaderMode = 'descriptive'): string {
+  const header = headersFor(cols, headers).map(csvEscape).join(',');
   const body = rows.map(r => cols.map(c => csvEscape(r[c.id])).join(',')).join('\n');
   return header + '\n' + body + (rows.length ? '\n' : '');
 }
@@ -156,6 +213,24 @@ export function _selfCheck() {
       if (wrongList.has(r.firstName) && !ownList.has(r.firstName)) throw new Error(`FAIL: ${loc} name ${r.firstName} vs gender ${r.gender}`);
     }
   }
+  // header modes: neutral hides every name, misleading leaves no column under its own
+  const many = AVAILABLE_COLUMNS.slice(0, 7);
+  if (headersFor(many, 'neutral').join() !== 'col_01,col_02,col_03,col_04,col_05,col_06,col_07') throw new Error('FAIL: neutral headers');
+  if (headersFor(AVAILABLE_COLUMNS, 'neutral')[110] !== 'col_111') throw new Error('FAIL: neutral header width');
+  for (const n of [2, 3, 7, AVAILABLE_COLUMNS.length]) {
+    const c = AVAILABLE_COLUMNS.slice(0, n), h = headersFor(c, 'misleading');
+    if (h.some((x, i) => x === c[i].name) || [...h].sort().join() !== c.map(x => x.name).sort().join()) throw new Error(`FAIL: misleading headers (${n} columns)`);
+  }
+  if (!rowsToCSV(rows, cols, 'neutral').startsWith('col_01,col_02\n') || !rowsToCSV(rows, cols, 'misleading').startsWith('SSN,First Name\n')) throw new Error('FAIL: CSV header modes');
+  const nd = JSON.parse(generateChunkText(cols, { ...co, format: 'ndjson', chunk: 3, headers: 'misleading' }).split('\n')[0]);
+  const plain = JSON.parse(generateChunkText(cols, { ...co, format: 'ndjson', chunk: 3 }).split('\n')[0]);
+  if (nd.ssn !== plain.firstName || nd.firstName !== plain.ssn) throw new Error('FAIL: NDJSON keys under misleading headers');
+  // density: should-fire columns carry the real value in that share of rows; other columns are untouched
+  const thin = generateRows({ columnIds: ['ssn', 'createdAt', 'aadhaar_invalid'], rowCount: 4000, seed: 13, density: 25 });
+  const share = thin.filter(r => /^\d{3}-\d{2}-\d{4}$/.test(r.ssn)).length / thin.length;
+  if (share < 0.22 || share > 0.28) throw new Error(`FAIL: density 25% gave ${(share * 100).toFixed(1)}% real SSNs`);
+  if (thin.some(r => typeof r.ssn !== 'string' || r.ssn === '')) throw new Error('FAIL: density filler must be a non-empty string');
+  if (thin.some(r => Number.isNaN(Date.parse(r.createdAt)) || !/^\d{12}$/.test(r.aadhaar_invalid))) throw new Error('FAIL: density must leave other columns alone');
   // checksum columns hold their contract; near-miss columns never accidentally pass.
   for (const r of generateRows({ columnIds: ['creditCard', 'creditCard_invalid', 'vin', 'vin_invalid'], rowCount: 2000, seed: 5 })) {
     if (!luhnValid(r.creditCard) || luhnValid(r.creditCard_invalid)) throw new Error(`FAIL: credit card Luhn: ${r.creditCard} / ${r.creditCard_invalid}`);

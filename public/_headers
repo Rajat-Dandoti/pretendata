@@ -1,0 +1,7 @@
+# Served by the static host (Cloudflare reads this file). Everything the app needs is
+# same-origin, so the policy forbids every other origin: nothing generated here can be sent
+# anywhere. 'unsafe-inline' is for style attributes only (the progress bar width).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'none'; form-action 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer

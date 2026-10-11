@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { X, RefreshCw, Search, ChevronRight } from 'lucide-react';
-import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory } from '../data/schema';
+import { AVAILABLE_COLUMNS, CATEGORY_COLORS, PrivacyCategory, EXPECTATION_LABELS, expectationFor } from '../data/schema';
 import { describeValidation, sampleValues, patternFor } from '../lib/reference';
 import { frameworksFor, valueTier, FrameworkId, FRAMEWORKS } from '../lib/frameworks';
 import { Chip, T, TIER_CHIP } from '../lib/ui';
@@ -87,6 +87,7 @@ export default function ColumnReference({ onClose, locale }: { onClose: () => vo
                         <span className="text-[10px] font-semibold text-slate-500 shrink-0">{v.label}</span>
                         {v.note && <span className="text-[11px] text-slate-500 leading-snug">{v.note}</span>}
                       </div>
+                      <div className="text-[11px] mt-0.5"><span className="text-slate-400">Detector </span><span className="text-slate-600">{EXPECTATION_LABELS[expectationFor(col)].toLowerCase()}</span></div>
                       {fws.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {fws.map(([id, value]) => (

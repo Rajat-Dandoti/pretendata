@@ -297,6 +297,40 @@ AVAILABLE_COLUMNS.forEach(col => {
   if (meta) Object.assign(col, meta);
 });
 
+// What a detector should do with a column — the idea the whole tool is built on, made explicit.
+//   detect:  sensitive; a detector should flag it
+//   ignore:  benign, or shaped like an identifier but deliberately not one; flagging it is a false positive
+//   context: sensitive only in combination or by policy; reported, never scored
+export type Expectation = 'detect' | 'ignore' | 'context';
+
+export const EXPECTATION_LABELS: Record<Expectation, string> = {
+  detect: 'Should fire',
+  ignore: 'Should not fire',
+  context: 'Depends on context',
+};
+
+const CATEGORY_EXPECTATION: Record<PrivacyCategory, Expectation> = {
+  'PII': 'detect', 'PHI': 'detect', 'PCI': 'detect', 'Secrets': 'detect', 'Biometric': 'detect',
+  'Network': 'context', 'Quasi-Identifier': 'context',
+  'Statistical': 'ignore', 'Masked': 'ignore', 'Non-Sensitive': 'ignore', 'DLP-Negative': 'ignore', 'Chaos': 'ignore',
+};
+
+// The few columns whose category undersells or oversells them.
+const EXPECTATION_OVERRIDES: Record<string, Expectation> = {
+  // Registered identifiers of a business, vehicle or device, filed under Quasi-Identifier.
+  gstin: 'detect', vin: 'detect', imei: 'detect', vehicleRegIndia: 'detect',
+  // An IPv6 address is as identifying as the IPv4 one under PII; a session cookie is a credential.
+  ipv6Address: 'detect', sessionCookie: 'detect',
+  // Assigned to one person, but meaningless outside the system that issued them.
+  employeeId: 'context', studentId: 'context', crmId: 'context',
+  // A quasi-identifier that happens to be a number.
+  age: 'context',
+};
+
+export function expectationFor(col: Pick<ColumnDef, 'id' | 'category'>): Expectation {
+  return EXPECTATION_OVERRIDES[col.id] ?? CATEGORY_EXPECTATION[col.category];
+}
+
 export const PRESETS: Record<string, string[]> = {
   'Common Users': ['firstName', 'lastName', 'email', 'phone', 'dob', 'gender', 'city', 'createdAt', 'lastLogin'],
   'HR / Employees': ['employeeId', 'firstName', 'lastName', 'email', 'phone', 'ssn', 'dob', 'gender', 'department', 'jobTitle', 'hireDate', 'salary', 'performanceScore'],

@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# editor settings and private results from running tools against generated data
+.vscode/
+xray*.json
+*-analysis.md
+
+# browser smoke test output (downloads, screenshots, Chrome profile)
+smoke/.out/

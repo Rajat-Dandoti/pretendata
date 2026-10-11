@@ -1,6 +1,6 @@
 import type { LocaleId } from './locale';
 import { AVAILABLE_COLUMNS } from '../data/schema';
-import { csvEscape, generateChunkText, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
+import { csvEscape, generateChunkText, headersFor, HeaderMode, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
 import { applySeed } from './seed';
 
 export type StreamFormat = 'csv' | 'ndjson';
@@ -12,6 +12,8 @@ export interface StreamOptions {
   seed: number | null;
   format: StreamFormat;
   locale?: LocaleId;
+  density?: number;
+  headers?: HeaderMode;
   onProgress?: (written: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -22,6 +24,7 @@ export interface MemoryOptions {
   sparsity: number;
   seed: number | null;
   locale?: LocaleId;
+  density?: number;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -61,6 +64,7 @@ export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
       sparsity: opts.sparsity,
       seed: opts.seed,
       locale: opts.locale,
+      density: opts.density,
     });
   }).finally(() => { detach(); worker.terminate(); });
 }
@@ -153,7 +157,7 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
   try {
     if (opts.format === 'csv') {
       const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
-      await sink.write(new TextEncoder().encode(UTF8_BOM + cols.map(c => csvEscape(c.name)).join(',') + '\n'));
+      await sink.write(new TextEncoder().encode(UTF8_BOM + headersFor(cols, opts.headers).map(csvEscape).join(',') + '\n'));
     }
     await new Promise<void>((resolve, reject) => {
       const ready = new Map<number, Uint8Array>(); // finished chunks waiting for their turn
@@ -213,6 +217,8 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
           seed: opts.seed,
           format: opts.format,
           locale: opts.locale,
+          density: opts.density,
+          headers: opts.headers,
         });
       }
       dispatch();
