@@ -1,6 +1,6 @@
 {
-  "version": 2,
-  "combined": "8aca8029fa9c",
+  "version": 3,
+  "combined": "8b40a72faf22",
   "columns": {
     "firstName": "b04361184389",
     "lastName": "bf7fb18fcea6",
@@ -25,7 +25,7 @@
     "healthInsuranceId": "1c252ef3908c",
     "bloodType": "12634938d65c",
     "diagnosisCode": "8dd980435a23",
-    "medicalNotes": "417a954b7d9c",
+    "medicalNotes": "5b5e170f71d2",
     "npi": "dd8b1b26b4f0",
     "dea": "1c213a446386",
     "nhsNumber": "61803cc1ccde",

@@ -104,7 +104,7 @@ Emitted into the **answer key** so a test harness knows what guarantee each valu
 | Health Insurance ID | `healthInsuranceId` | — | pattern-only | 3 alpha + 8 digits |
 | Blood Type | `bloodType` | — | free-form | Enum (A+, AB-, O+, …) |
 | ICD-10 Code | `diagnosisCode` | — | pattern-only | `A##.#` |
-| Medical Notes | `medicalNotes` | — | free-form | Faker sentence |
+| Medical Notes | `medicalNotes` | — | free-form | One of 20 clinical sentences (conditions, results, medication); health content, no identifiers |
 | NPI | `npi` | US | **npi-luhn** | 10 digits; Luhn valid over `80840`+body; body starts 1/2 |
 | DEA Number | `dea` | US | pattern-only | 2 letters + 7 digits; check = `(d1+d3+d5) + 2·(d2+d4+d6)` mod 10 |
 | NHS Number | `nhsNumber` | UK | **mod-11** | 9 digits + mod-11 check (weights 10..2), written `NNN NNN NNNN`; regenerate if check == 10 |
@@ -304,6 +304,27 @@ columns that have a validator: `ssn`, `aadhaar`, `creditCard`, `iban`, `npi`, `n
 
 `canonicalForms()` in `src/lib/variants.ts` undoes every form, and `npm test` checks that each written
 value still stands for a valid identifier.
+
+---
+
+## Text documents
+
+The *Text* panel (and `POST /api/text`) writes prose instead of rows. Templates live in
+[`src/data/templates.ts`](src/data/templates.ts); a `{{columnId}}` slot is filled with that column's
+value, so every guarantee above carries over, including formatting variants.
+
+| Pack | What it imitates |
+|---|---|
+| `email` | Business email bodies with personal and payment details |
+| `ticket` | Support tickets where people paste card numbers, Aadhaar, session cookies |
+| `chat` | Workplace chat with pasted credentials |
+| `clinical` | Clinical notes mixing patient identifiers with health information |
+| `log` | Application log lines leaking personal data and secrets |
+| `prompt` | Prompts typed into AI assistants, with a few injection attempts; written as chat messages |
+
+Output is NDJSON: `{ "pack", "text", "entities": [{ "start", "end", "type", "value", "expectation" }] }`.
+Offsets count Unicode code points with the end exclusive, so `text[start:end]` in Python is the value.
+In JavaScript use `[...text].slice(start, end).join('')`.
 
 ---
 

@@ -10,6 +10,7 @@ import {
   negative, generateSSNNeverIssued, generateAadhaarWrongPrefix, transposeDigits,
 } from '../lib/validators';
 import type { LocaleId } from '../lib/locale';
+import { CLINICAL_SENTENCES } from './templates';
 
 export type PrivacyCategory = 'PII' | 'PHI' | 'PCI' | 'Secrets' | 'Biometric' | 'Network' | 'Quasi-Identifier' | 'Statistical' | 'Masked' | 'Non-Sensitive' | 'DLP-Negative' | 'Chaos';
 
@@ -84,7 +85,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'healthInsuranceId', name: 'Health Insurance ID', category: 'PHI', generate: () => `${faker.string.alpha({ length: 3, casing: 'upper' })}${faker.string.numeric(8)}`, defaultSelected: false },
   { id: 'bloodType', name: 'Blood Type', category: 'PHI', generate: () => faker.helpers.arrayElement(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']), defaultSelected: false },
   { id: 'diagnosisCode', name: 'ICD-10 Diagnosis', category: 'PHI', generate: () => `${faker.string.alpha({ length: 1, casing: 'upper' })}${faker.string.numeric(2)}.${faker.string.numeric(1)}`, defaultSelected: false },
-  { id: 'medicalNotes', name: 'Medical Notes', category: 'PHI', generate: () => faker.lorem.sentence(), defaultSelected: false },
+  { id: 'medicalNotes', name: 'Medical Notes', category: 'PHI', generate: () => faker.helpers.arrayElement(CLINICAL_SENTENCES), defaultSelected: false },
   { id: 'npi', name: 'NPI (US Provider)', category: 'PHI', generate: () => generateNPI(), defaultSelected: false },
   { id: 'dea', name: 'DEA Number (US)', category: 'PHI', generate: () => generateDEA(), defaultSelected: false },
   { id: 'nhsNumber', name: 'NHS Number (UK)', category: 'PHI', generate: () => generateNHSNumber(), defaultSelected: false },

@@ -11,6 +11,7 @@ import { generateRows, rowsToCSV, rowsToSQL, rekeyRows, HEADER_MODES, HeaderMode
 import { nestRows, JsonStructure } from '../src/lib/nesting';
 import type { LocaleId } from '../src/lib/locale';
 import { FORMATTINGS, Formatting } from '../src/lib/variants';
+import { generateDocs, docsToNdjson, TEXT_PACKS, TextPack } from '../src/lib/text';
 
 // Load .env if present — Node built-in, no dotenv dep.
 try { process.loadEnvFile(); } catch { /* no .env, or Node < 20.12 */ }
@@ -103,6 +104,21 @@ app.post('/api/generate', async (c) => {
     return c.body(nested.map(r => JSON.stringify(r)).join('\n') + (nested.length ? '\n' : ''), 200, { 'content-type': 'application/x-ndjson' });
   }
   return c.json({ error: `unknown format: ${format}` }, 400);
+});
+
+// ---------- text documents ----------
+app.post('/api/text', async (c) => {
+  let body: { pack?: TextPack; count?: number; seed?: number | null; locale?: LocaleId; formatting?: Formatting };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'invalid JSON body' }, 400); }
+  if (!body || typeof body !== 'object') return c.json({ error: 'body must be a JSON object' }, 400);
+  const pack = body.pack ?? 'mixed';
+  if (!TEXT_PACKS.includes(pack)) return c.json({ error: `pack must be one of: ${TEXT_PACKS.join(', ')}` }, 400);
+  const count = Number(body.count ?? 100);
+  if (!Number.isInteger(count) || count < 1 || count > MAX_ROWS) return c.json({ error: `count must be an integer from 1 to ${MAX_ROWS}` }, 400);
+  if (body.seed != null && !Number.isFinite(body.seed)) return c.json({ error: 'seed must be a number' }, 400);
+  if (body.formatting != null && !FORMATTINGS.includes(body.formatting)) return c.json({ error: `formatting must be one of: ${FORMATTINGS.join(', ')}` }, 400);
+  const docs = generateDocs({ pack, count, seed: body.seed ?? null, locale: body.locale, formatting: body.formatting });
+  return c.body(docsToNdjson(docs), 200, { 'content-type': 'application/x-ndjson' });
 });
 
 // ---------- static SPA (prod: one deployable) ----------

@@ -1,5 +1,6 @@
 import type { LocaleId } from './locale';
 import type { Formatting } from './variants';
+import type { Doc, TextOptions } from './text';
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { csvEscape, generateChunkText, headersFor, HeaderMode, sqlCreateTable, StreamFormat, STREAM_CHUNK_ROWS, UTF8_BOM } from './generate';
 import { applySeed } from './seed';
@@ -47,30 +48,32 @@ function wireAbort(worker: Worker, signal?: AbortSignal): () => void {
   return () => signal.removeEventListener('abort', handler);
 }
 
-/** Generate rows in a Worker, return the full array to the main thread. */
-export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
+/** Run one job in a fresh Worker and return what it produced. */
+function runInWorker<T>(message: object, o: { onProgress?: (done: number, total: number) => void; signal?: AbortSignal }): Promise<T[]> {
   const worker = newWorker();
-  const detach = wireAbort(worker, opts.signal);
-  return new Promise<any[]>((resolve, reject) => {
+  const detach = wireAbort(worker, o.signal);
+  return new Promise<T[]>((resolve, reject) => {
     worker.onmessage = (e) => {
       const m = e.data;
-      if (m.type === 'progress') opts.onProgress?.(m.done, m.total);
+      if (m.type === 'progress') o.onProgress?.(m.done, m.total);
       else if (m.type === 'done') resolve(m.rows ?? []);
       else if (m.type === 'cancelled') reject(new Error('Cancelled'));
       else if (m.type === 'error') reject(new Error(m.message));
     };
     worker.onerror = (e) => reject(new Error(e.message));
-    worker.postMessage({
-      type: 'memory',
-      columnIds: opts.columnIds,
-      rowCount: opts.rowCount,
-      sparsity: opts.sparsity,
-      seed: opts.seed,
-      locale: opts.locale,
-      density: opts.density,
-      formatting: opts.formatting,
-    });
+    worker.postMessage(message);
   }).finally(() => { detach(); worker.terminate(); });
+}
+
+/** Generate rows in a Worker, return the full array to the main thread. */
+export function generateInWorker(opts: MemoryOptions): Promise<any[]> {
+  const { onProgress, signal, ...settings } = opts;
+  return runInWorker({ type: 'memory', ...settings }, opts);
+}
+
+/** Generate text documents in a Worker. */
+export function generateDocsInWorker(opts: TextOptions): Promise<Doc[]> {
+  return runInWorker<Doc>({ type: 'text', ...opts }, {});
 }
 
 interface Sink {

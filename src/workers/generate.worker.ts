@@ -2,10 +2,12 @@
 import { AVAILABLE_COLUMNS, ColumnDef } from '../data/schema';
 import { applySeed } from '../lib/seed';
 import { makeRow, generateChunkText, HeaderMode, RowOptions, StreamFormat } from '../lib/generate';
+import { generateDocs, TextOptions } from '../lib/text';
 
 type In =
   | ({ type: 'memory'; columnIds: string[]; rowCount: number; seed: number | null } & RowOptions)
   | ({ type: 'init'; columnIds: string[]; seed: number | null; format: StreamFormat; headers?: HeaderMode } & RowOptions)
+  | ({ type: 'text' } & TextOptions)
   | { type: 'job'; chunk: number; rows: number }
   | { type: 'cancel' };
 
@@ -38,6 +40,11 @@ ctx_self.onmessage = async (e: MessageEvent<In>) => {
       const bytes = encoder.encode(generateChunkText(stream.cols, { ...stream, chunk: msg.chunk, rows: msg.rows }));
       // Encoded here and transferred, so the main thread neither copies nor encodes the chunk.
       ctx_self.postMessage({ type: 'chunk', chunk: msg.chunk, bytes } satisfies Out, [bytes.buffer]);
+      return;
+    }
+
+    if (msg.type === 'text') {
+      post({ type: 'done', rows: generateDocs(msg) });
       return;
     }
 

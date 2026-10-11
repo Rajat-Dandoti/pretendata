@@ -27,6 +27,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   the settings that regenerate the exact dataset.
 - **Scorecard** — load your tool's per-column results (JSON or CSV), say what each of its labels means,
   and see recall, false positives and whether near-misses were told apart. Export as Markdown or JSON.
+- **Text and AI prompts** — emails, support tickets, chat, clinical notes, log lines and prompts with
+  identifiers embedded in the prose. Each document lists its entities (start, end, type, value) as its
+  own answer key, for testing mail and chat DLP, entity recognisers and AI guardrails.
 - **Near-miss / DLP-Negative controls** — the same identifiers with the check digit deliberately broken,
   a never-issued range or two digits swapped, plus hard negatives (timestamps, order and tracking
   numbers) that only look like identifiers. Each is guaranteed valid as nothing, to measure a
@@ -137,6 +140,9 @@ curl -X POST localhost:8787/api/generate -H 'content-type: application/json' \
 curl -X POST localhost:8787/api/generate -H 'content-type: application/json' \
   -d '{"columnIds":["email","ssn"],"rowCount":100,"seed":42,"format":"csv"}'
 ```
+
+- `POST /api/text` — body: `{ pack?, count?, seed?, locale?, formatting? }`; `pack` ∈ `email` · `ticket` · `chat` ·
+  `clinical` · `log` · `prompt` · `mixed` (default). Returns NDJSON, one document per line with its `entities`.
 
 Set `API_KEY` to require an `x-api-key` header on `/api/*` in shared deployments.
 
