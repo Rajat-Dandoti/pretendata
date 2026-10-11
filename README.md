@@ -84,6 +84,9 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
 - **Periodic saves (Chrome / Edge)** — the file you picked is committed about every 30 seconds, less
   often as it grows, so a reload or crash only loses the rows since the last save. Each save may
   briefly need extra free disk space. Other browsers stream through their normal download instead.
+- **Compression** — tick *Compress as .gz* to write the file gzip-compressed with the browser's own
+  compressor. Measured on 20,000-row CSVs, the result is 37% to 58% of the original size depending on
+  the columns.
 - **Keep the tab open** — the browser asks before a reload or close mid-run. Sleep pauses the run. For
   multi-hour runs prefer `npm run build && npm run preview` (or the live demo) over `npm run dev`,
   whose dev server reloads the page when it reconnects.

@@ -17,6 +17,8 @@ export interface StreamOptions {
   density?: number;
   formatting?: Formatting;
   headers?: HeaderMode;
+  /** Write the file gzip-compressed (.gz). Needs the browser's CompressionStream. */
+  gzip?: boolean;
   onProgress?: (written: number, total: number) => void;
   signal?: AbortSignal;
 }
@@ -81,6 +83,31 @@ interface Sink {
   close(): Promise<void>;
 }
 
+export function isGzipSupported(): boolean {
+  return typeof CompressionStream !== 'undefined';
+}
+
+/**
+ * Compress on the way into a sink, with the platform's own gzip. Closing finishes the gzip
+ * stream first, so even a cancelled run leaves a valid archive of what was written.
+ */
+function gzipped(sink: Sink): Sink {
+  const gz = new CompressionStream('gzip');
+  const writer = gz.writable.getWriter();
+  const pump = (async () => {
+    const reader = gz.readable.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      await sink.write(value);
+    }
+  })();
+  return {
+    write: (bytes) => writer.write(bytes),
+    close: async () => { await writer.close(); await pump; await sink.close(); },
+  };
+}
+
 const CHECKPOINT_MIN_MS = 30_000;
 
 /** Workers used for a streamed run: leave one core for the page, cap at 8. */
@@ -94,11 +121,11 @@ export function streamPoolSize(): number {
  * single streamed file (never buffered in full, never split into chunks), just delivered
  * to the browser's default downloads folder instead of a chosen path.
  */
-async function openSink(suggestedName: string, format: StreamFormat): Promise<Sink> {
+async function openSink(suggestedName: string, format: StreamFormat, gzip: boolean): Promise<Sink> {
   if (isStreamingSupported()) {
     const fileHandle = await (window as any).showSaveFilePicker({
       suggestedName,
-      types: [{
+      types: [gzip ? { description: 'Gzip', accept: { 'application/gzip': ['.gz'] } } : {
         csv: { description: 'CSV', accept: { 'text/csv': ['.csv'] } },
         ndjson: { description: 'NDJSON', accept: { 'application/x-ndjson': ['.ndjson', '.jsonl'] } },
         sql: { description: 'SQL', accept: { 'application/sql': ['.sql'] } },
@@ -153,8 +180,10 @@ async function openSink(suggestedName: string, format: StreamFormat): Promise<Si
  * chunks in parallel; the main thread writes them strictly in chunk order.
  */
 export async function streamGenerateToFile(opts: StreamOptions): Promise<{ written: number }> {
-  const suggestedName = `pretendata.${opts.format}`;
-  const sink = await openSink(suggestedName, opts.format);
+  const gzip = !!opts.gzip && isGzipSupported();
+  const suggestedName = `pretendata.${opts.format}${gzip ? '.gz' : ''}`;
+  const file = await openSink(suggestedName, opts.format, gzip);
+  const sink = gzip ? gzipped(file) : file;
   const totalChunks = Math.ceil(opts.rowCount / STREAM_CHUNK_ROWS);
   const poolSize = Math.min(totalChunks, streamPoolSize());
   const workers = Array.from({ length: poolSize }, newWorker);
@@ -249,7 +278,8 @@ export async function streamGenerateToFile(opts: StreamOptions): Promise<{ writt
 export async function _selfCheck() {
   const g = globalThis as any;
   const saved = { window: g.window, Worker: g.Worker, now: performance.now };
-  const dec = new TextDecoder('utf-8', { ignoreBOM: true }); // keep the BOM: the fake file must hold every byte
+  const dec = new TextDecoder('utf-8', { ignoreBOM: true }); // keep the BOM: the file must be compared byte for byte
+  const join = (parts: Uint8Array[]) => { const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0)); let at = 0; for (const p of parts) { out.set(p, at); at += p.length; } return out; };
   const opts = { columnIds: ['firstName', 'ssn'], rowCount: STREAM_CHUNK_ROWS * 12 + 123, sparsity: 10, seed: 9, format: 'csv' as const, locale: 'mix' as const };
   const cols = AVAILABLE_COLUMNS.filter(c => opts.columnIds.includes(c.id));
   let expected = UTF8_BOM + 'First Name,SSN\n';
@@ -267,21 +297,22 @@ export async function _selfCheck() {
     terminate() { this.dead = true; }
   };
   const fakeFile = (onClose: (n: number) => void) => {
-    const file = { text: '', open: 0, closes: 0 };
+    const file = { bytes: new Uint8Array(0), get text() { return dec.decode(this.bytes); }, open: 0, closes: 0 };
     g.window = { showSaveFilePicker: async () => ({
       async createWritable(o?: { keepExistingData?: boolean }) {
-        let swap = o?.keepExistingData ? file.text : '';
+        const swap: Uint8Array[] = o?.keepExistingData ? [file.bytes] : [];
+        const size = () => swap.reduce((n, p) => n + p.length, 0);
         let closed = false;
         file.open++;
         return {
-          async write(b: Uint8Array) { swap += dec.decode(b); },
-          async seek(pos: number) { if (pos !== new TextEncoder().encode(swap).length) throw new Error('seek is not at the end of the file'); },
+          async write(b: Uint8Array) { swap.push(b.slice()); },
+          async seek(pos: number) { if (pos !== size()) throw new Error('seek is not at the end of the file'); },
           async close() {
             if (closed) throw new TypeError('writable already closed');
             closed = true;
             onClose(++file.closes);
             await new Promise(r => setTimeout(r, 5));
-            file.text = swap;
+            file.bytes = join(swap);
             file.open--;
           },
         };
@@ -308,6 +339,14 @@ export async function _selfCheck() {
     if (err?.message !== 'Cancelled') throw new Error('FAIL: cancel should reject with Cancelled');
     if (cut.open !== 0) throw new Error('FAIL: cancel during a save left a writable open');
     if (cut.text.length < 1000 || !expected.startsWith(cut.text)) throw new Error('FAIL: cancelled file is not a clean prefix');
+
+    // Gzip: smaller on disk, and decompresses to exactly the same file — periodic saves included.
+    clock = 0;
+    const packed = fakeFile(() => {});
+    await streamGenerateToFile({ ...opts, gzip: true });
+    const unpacked = await new Response(new Blob([packed.bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    if (dec.decode(unpacked) !== expected) throw new Error('FAIL: gzipped stream does not decompress to the same file');
+    if (packed.bytes.length > expected.length * 0.7 || packed.open !== 0) throw new Error(`FAIL: gzip should shrink this file well below 70% (got ${Math.round(100 * packed.bytes.length / expected.length)}%) and leave nothing open`);
   } finally {
     g.window = saved.window; g.Worker = saved.Worker; performance.now = saved.now;
     applySeed(null);

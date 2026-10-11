@@ -7,7 +7,7 @@ import { exportCSV, exportJSON, exportSQL, exportPresetConfig, downloadAnswerKey
 import { JsonStructure } from './lib/nesting';
 import { RunMeta } from './lib/manifest';
 import { triggeredFrameworks, frameworkBreakdown, valueTier, FRAMEWORK_NOTES } from './lib/frameworks';
-import { streamGenerateToFile, StreamFormat, generateInWorker, streamPoolSize } from './lib/streaming';
+import { streamGenerateToFile, StreamFormat, generateInWorker, streamPoolSize, isGzipSupported } from './lib/streaming';
 import { encode as encodeShare, decode as decodeShare, SHARE_VERSION, ShareState } from './lib/share';
 import { LOCALES, LocaleId } from './lib/locale';
 import { makeRow, headersFor, HeaderMode, HEADER_MODES, STREAM_FORMATS } from './lib/generate';
@@ -108,6 +108,7 @@ export default function App() {
   const [headerMode, setHeaderMode] = useState<HeaderMode>(initial.headerMode);
   const [density, setDensity] = useState<number>(initial.density);
   const [formatting, setFormatting] = useState<Formatting>(initial.formatting);
+  const [gzip, setGzip] = useState(false);
   const [streamProgress, setStreamProgress] = useState<{ written: number; total: number } | null>(null);
   const [seedStr, setSeedStr] = useState<string>(initial.seedStr);
   const [columnSearch, setColumnSearch] = useState<string>('');
@@ -323,12 +324,13 @@ export default function App() {
           density,
           formatting,
           headers: headerMode,
+          gzip,
           signal: ac.signal,
           onProgress: (written, total) => setStreamProgress({ written, total }),
         });
         setGeneratedData([]);
         setLastRunMeta(buildRunMeta(rowCount));
-        setToast({ text: `Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}` });
+        setToast({ text: `Streamed ${rowCount.toLocaleString()} rows to file · ${streamFormat.toUpperCase()}${gzip ? ' (gzip)' : ''}` });
       } catch (err: any) {
         if (err?.name !== 'AbortError' && err?.message !== 'Cancelled') {
           setToast({ text: err?.message || 'Streaming generation failed.', error: true });
@@ -505,6 +507,12 @@ export default function App() {
                     </Button>
                   ))}
                 </div>
+                {isGzipSupported() && (
+                  <label className="flex items-center gap-2 text-[11px] text-amber-800 cursor-pointer select-none">
+                    <input type="checkbox" checked={gzip} onChange={e => setGzip(e.target.checked)} className="accent-indigo-600" />
+                    Compress as .gz (roughly half the size)
+                  </label>
+                )}
               </div>
             )}
           </div>
