@@ -14,7 +14,8 @@
     "test": "tsx src/lib/_selftest.ts",
     "server": "tsx watch server/index.ts",
     "dev:all": "tsx watch server/index.ts & vite --port=5173 --host=0.0.0.0; kill $!",
-    "smoke": "vite build && node smoke/run.mjs"
+    "smoke": "vite build && node smoke/run.mjs",
+    "pin-seed": "tsx src/lib/_seedcontract.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^10.3.0",

@@ -12,7 +12,7 @@ export default async (page, check) => {
   // key before generating: describes the current settings
   const k1 = await page.download(() => page.click('button[aria-label="Answer key"]'));
   const key1 = JSON.parse(readFileSync(k1.path, 'utf8'));
-  check(k1.name === 'pretendata.answer-key.json' && key1.version === 2 && key1.generatorVersion === 1 && key1.seeding === 'whole' && key1.seed === 42 && key1.locale === 'en' && key1.rowCount === 100, `answer key before generating (${k1.name}, v${key1.version}, ${key1.seeding}, seed ${key1.seed})`);
+  check(k1.name === 'pretendata.answer-key.json' && key1.version === 2 && key1.generatorVersion >= 2 && key1.seeding === 'whole' && key1.seed === 42 && key1.locale === 'en' && key1.rowCount === 100, `answer key before generating (${k1.name}, v${key1.version}, ${key1.seeding}, seed ${key1.seed})`);
   check(key1.columns.length === 9 && key1.columns.every(c => c.expectation && c.header === c.name) && key1.columns.find(c => c.id === 'email').expectation === 'detect', 'key lists 9 columns with header and expectation');
   check(!('kAnonymity' in key1) && !('mode' in key1), 'old fields removed');
 

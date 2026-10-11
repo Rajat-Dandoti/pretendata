@@ -108,9 +108,13 @@ const IBAN_REGISTRY: Record<string, RegExp> = {
   DE: /^\d{18}$/, FR: /^\d{10}[A-Z0-9]{11}\d{2}$/, GB: /^[A-Z]{4}\d{14}$/,
   ES: /^\d{20}$/, IT: /^[A-Z]\d{10}[A-Z0-9]{12}$/, NL: /^[A-Z]{4}\d{10}$/,
 };
-/** Shape, the country's registry layout where known, and mod-97 == 1 over the rearranged IBAN. */
+// Country codes in the IBAN registry: without this, any 17-character VIN that starts with two
+// letters and two digits has a 1-in-97 chance of "being" an IBAN.
+const IBAN_COUNTRIES = new Set(('AD AE AL AT AZ BA BE BG BH BI BR BY CH CR CY CZ DE DJ DK DO EE EG ES FI FK FO FR GB GE GI GL GR GT HN HR HU ' +
+  'IE IL IQ IS IT JO KW KZ LB LC LI LT LU LV LY MC MD ME MK MN MR MT MU NI NL NO OM PK PL PS PT QA RO RS RU SA SC SD SE SI SK SM SO ST SV TL TN TR UA VA VG XK YE').split(' '));
+/** A registry country, its layout where known, and mod-97 == 1 over the rearranged IBAN. */
 export function ibanValid(iban: string): boolean {
-  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban)) return false;
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(iban) || !IBAN_COUNTRIES.has(iban.slice(0, 2))) return false;
   const layout = IBAN_REGISTRY[iban.slice(0, 2)];
   return (!layout || layout.test(iban.slice(4))) && mod97(lettersToDigits(iban.slice(4) + iban.slice(0, 4))) === 1;
 }
@@ -427,6 +431,44 @@ export const VALIDATORS: Record<string, (value: string) => boolean> = {
   // ABA routing number: weights 3, 7, 1 repeating, sum divisible by 10.
   routingNumber: s => /^\d{9}$/.test(s) && [...s].reduce((sum, c, i) => sum + parseInt(c, 10) * [3, 7, 1][i % 3], 0) % 10 === 0,
 };
+
+/** Ids of every validator the value passes, written with or without separators. */
+export function validAs(value: string): string[] {
+  const compact = digitsOf(value);
+  return Object.keys(VALIDATORS).filter(id => VALIDATORS[id](value) || VALIDATORS[id](compact));
+}
+
+/**
+ * Redraw until the value passes no validator at all. A negative control has to be negative for
+ * every detector: a broken EAN-13 that happens to pass Luhn is, to a card detector, a card.
+ */
+export function negative(draw: () => string): string {
+  for (;;) {
+    const v = draw();
+    if (validAs(v).length === 0) return v;
+  }
+}
+
+// ---------- more ways to be almost right ----------
+const pad = (n: number, width: number) => String(n).padStart(width, '0');
+/** SSN from a range that is never issued: area 000, 666 or 900–999. */
+export function generateSSNNeverIssued(): string {
+  const area = pick([0, 666, 900 + rand(100)]);
+  return `${pad(area, 3)}-${pad(1 + rand(99), 2)}-${pad(1 + rand(9999), 4)}`;
+}
+/** Aadhaar with a correct Verhoeff digit but a first digit (0 or 1) that is never issued. */
+export function generateAadhaarWrongPrefix(): string {
+  const base = `${rand(2)}${digits(10)}`;
+  return base + verhoeffCheckDigit(base);
+}
+/** Swap two neighbouring digits — the commonest typing error, and what check digits exist to catch. */
+export function transposeDigits(s: string): string {
+  const spots: number[] = [];
+  for (let i = 0; i < s.length - 1; i++) if (/\d/.test(s[i]) && /\d/.test(s[i + 1]) && s[i] !== s[i + 1]) spots.push(i);
+  if (spots.length === 0) return s;
+  const i = pick(spots);
+  return s.slice(0, i) + s[i + 1] + s[i] + s.slice(i + 2);
+}
 
 // ---------- self-checks (ponytail: run via `tsx src/lib/validators.ts`) ----------
 function assert(cond: any, msg: string) { if (!cond) throw new Error('FAIL: ' + msg); }

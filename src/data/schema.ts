@@ -7,6 +7,7 @@ import {
   generateNHSNumber, generateDEA, breakChecksum,
   generateUPI, generateVoterId, generateVehicleRegIndia, generateIFSC, generateABHA, generateIqama,
   generateMobile, generateJWT,
+  negative, generateSSNNeverIssued, generateAadhaarWrongPrefix, transposeDigits,
 } from '../lib/validators';
 import type { LocaleId } from '../lib/locale';
 
@@ -177,17 +178,30 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
 
   // Near-miss siblings: regex-shaped, checksum deliberately broken. Category is DLP-Negative because
   // a well-behaved DLP should NOT flag these — they're the false-positive control set.
-  { id: 'aadhaar_invalid',    name: 'Aadhaar (near-miss)',     category: 'DLP-Negative', generate: () => breakChecksum(generateAadhaar()),    defaultSelected: false },
-  { id: 'creditCard_invalid', name: 'Credit Card (near-miss)', category: 'DLP-Negative', generate: () => breakChecksum(faker.finance.creditCardNumber()), defaultSelected: false },
-  { id: 'iban_invalid',       name: 'IBAN (near-miss)',        category: 'DLP-Negative', generate: () => breakChecksum(generateIBAN()),       defaultSelected: false },
-  { id: 'npi_invalid',        name: 'NPI (near-miss)',         category: 'DLP-Negative', generate: () => breakChecksum(generateNPI()),        defaultSelected: false },
-  { id: 'nhsNumber_invalid',  name: 'NHS Number (near-miss)',  category: 'DLP-Negative', generate: () => breakChecksum(generateNHSNumber()),  defaultSelected: false },
-  { id: 'gstin_invalid',      name: 'GSTIN (near-miss)',       category: 'DLP-Negative', generate: () => breakChecksum(generateGSTIN()),      defaultSelected: false },
-  { id: 'vin_invalid',        name: 'VIN (near-miss)',         category: 'DLP-Negative', generate: () => breakChecksum(generateVIN()),        defaultSelected: false },
-  { id: 'imei_invalid',       name: 'IMEI (near-miss)',        category: 'DLP-Negative', generate: () => breakChecksum(generateIMEI()),       defaultSelected: false },
-  { id: 'ean13_invalid',      name: 'EAN-13 (near-miss)',      category: 'DLP-Negative', generate: () => breakChecksum(generateEAN13()),      defaultSelected: false },
-  { id: 'isin_invalid',       name: 'ISIN (near-miss)',        category: 'DLP-Negative', generate: () => breakChecksum(generateISIN()),       defaultSelected: false },
-  { id: 'iqama_invalid',      name: 'Iqama (near-miss)',       category: 'DLP-Negative', generate: () => breakChecksum(generateIqama()),      defaultSelected: false },
+  { id: 'aadhaar_invalid',    name: 'Aadhaar (near-miss)',     category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateAadhaar())),    defaultSelected: false },
+  { id: 'creditCard_invalid', name: 'Credit Card (near-miss)', category: 'DLP-Negative', generate: () => negative(() => breakChecksum(faker.finance.creditCardNumber())), defaultSelected: false },
+  { id: 'iban_invalid',       name: 'IBAN (near-miss)',        category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateIBAN())),       defaultSelected: false },
+  { id: 'npi_invalid',        name: 'NPI (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateNPI())),        defaultSelected: false },
+  { id: 'nhsNumber_invalid',  name: 'NHS Number (near-miss)',  category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateNHSNumber())),  defaultSelected: false },
+  { id: 'gstin_invalid',      name: 'GSTIN (near-miss)',       category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateGSTIN())),      defaultSelected: false },
+  { id: 'vin_invalid',        name: 'VIN (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateVIN())),        defaultSelected: false },
+  { id: 'imei_invalid',       name: 'IMEI (near-miss)',        category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateIMEI())),       defaultSelected: false },
+  { id: 'ean13_invalid',      name: 'EAN-13 (near-miss)',      category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateEAN13())),      defaultSelected: false },
+  { id: 'isin_invalid',       name: 'ISIN (near-miss)',        category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateISIN())),       defaultSelected: false },
+  { id: 'iqama_invalid',      name: 'Iqama (near-miss)',       category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateIqama())),      defaultSelected: false },
+  // More ways to be almost right: a never-issued range, a wrong prefix, a typing error.
+  { id: 'ssn_invalid',            name: 'SSN (never issued)',        category: 'DLP-Negative', generate: () => negative(generateSSNNeverIssued),                                  defaultSelected: false },
+  { id: 'aadhaar_prefix',         name: 'Aadhaar (wrong prefix)',    category: 'DLP-Negative', generate: () => negative(generateAadhaarWrongPrefix),                              defaultSelected: false },
+  { id: 'creditCard_transposed',  name: 'Credit Card (transposed)',  category: 'DLP-Negative', generate: () => negative(() => transposeDigits(faker.finance.creditCardNumber())), defaultSelected: false },
+  { id: 'routingNumber_invalid',  name: 'Routing Number (near-miss)', category: 'DLP-Negative', generate: () => negative(() => breakChecksum(faker.finance.routingNumber())),      defaultSelected: false },
+  { id: 'dea_invalid',            name: 'DEA Number (near-miss)',    category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateDEA())),                      defaultSelected: false },
+  // Hard negatives: ordinary business values that merely look like identifiers. Each is redrawn
+  // until it passes no validator, so flagging one is always a false positive.
+  { id: 'epochSeconds',   name: 'Epoch Timestamp (s)',  category: 'DLP-Negative', generate: () => negative(() => String(Math.floor(faker.date.recent({ days: 365 }).getTime() / 1000))), defaultSelected: false },
+  { id: 'epochMillis',    name: 'Epoch Timestamp (ms)', category: 'DLP-Negative', generate: () => negative(() => String(faker.date.recent({ days: 365 }).getTime())),                    defaultSelected: false },
+  { id: 'orderNumber',    name: 'Order Number',         category: 'DLP-Negative', generate: () => negative(() => `${faker.number.int({ min: 2, max: 9 })}${faker.string.numeric(11)}`),     defaultSelected: false },
+  { id: 'trackingNumber', name: 'Tracking Number',      category: 'DLP-Negative', generate: () => negative(() => `1Z${faker.string.alphanumeric({ length: 16, casing: 'upper' })}`),        defaultSelected: false },
+  { id: 'skuCode',        name: 'SKU Code',             category: 'DLP-Negative', generate: () => `SKU-${faker.string.alpha({ length: 2, casing: 'upper' })}${faker.string.numeric(2)}-${faker.string.numeric(4)}`, defaultSelected: false },
 
   // Chaos / Malformed — intentionally hostile values that stress parsers, CSV escaping, and DLP engines.
   // ponytail: fixed payload pools picked via seeded faker.helpers.arrayElement — reproducible under a seed.
@@ -281,6 +295,17 @@ const COLUMN_DLP_META: Record<string, Partial<Pick<ColumnDef, 'region' | 'valida
   ean13_invalid:      {                 validation: 'near-miss-of:ean13' },
   isin_invalid:       {                 validation: 'near-miss-of:isin' },
   iqama_invalid:      { region: 'SA',   validation: 'near-miss-of:iqama' },
+  ssn_invalid:           { region: 'US', validation: 'near-miss-of:ssn' },
+  aadhaar_prefix:        { region: 'IN', validation: 'near-miss-of:aadhaar' },
+  creditCard_transposed: {               validation: 'near-miss-of:creditCard' },
+  routingNumber_invalid: { region: 'US', validation: 'near-miss-of:routingNumber' },
+  dea_invalid:           { region: 'US', validation: 'near-miss-of:dea' },
+  // Hard negatives: shaped, benign, valid as nothing.
+  epochSeconds:   { validation: 'pattern-only' },
+  epochMillis:    { validation: 'pattern-only' },
+  orderNumber:    { validation: 'pattern-only' },
+  trackingNumber: { validation: 'pattern-only' },
+  skuCode:        { validation: 'pattern-only' },
   // Chaos — all malformed by design.
   chaosEmpty:     { validation: 'chaos' },
   chaosUnicode:   { validation: 'chaos' },
@@ -341,7 +366,9 @@ export const PRESETS: Record<string, string[]> = {
   'Technical / IT': ['hashedId', 'ipAddress', 'macAddress', 'deviceType', 'lastLogin', 'createdAt', 'subscriptionTier'],
   // DLP testing
   'DLP Detection Test': ['firstName', 'lastName', 'email', 'phone', 'ssn', 'aadhaar', 'pan', 'gstin', 'iban', 'creditCard', 'npi', 'nhsNumber', 'ein', 'vin', 'imei', 'ean13', 'isin'],
-  'DLP False-Positive Test': ['firstName', 'email', 'aadhaar_invalid', 'creditCard_invalid', 'iban_invalid', 'npi_invalid', 'nhsNumber_invalid', 'gstin_invalid', 'vin_invalid', 'imei_invalid', 'ean13_invalid', 'isin_invalid'],
+  'DLP False-Positive Test': ['firstName', 'email', 'aadhaar_invalid', 'creditCard_invalid', 'iban_invalid', 'npi_invalid', 'nhsNumber_invalid', 'gstin_invalid', 'vin_invalid', 'imei_invalid', 'ean13_invalid', 'isin_invalid',
+    'ssn_invalid', 'aadhaar_prefix', 'creditCard_transposed', 'routingNumber_invalid', 'dea_invalid',
+    'epochSeconds', 'epochMillis', 'orderNumber', 'trackingNumber', 'skuCode'],
   'Secrets Leak Test': ['awsAccessKey', 'awsSecretKey', 'githubPAT', 'stripeKey', 'googleApiKey', 'jwt', 'bcryptHash', 'privateKeyPem', 'basicAuthUrl'],
   'App Telemetry': ['crmId', 'ipAddress', 'ipv6Address', 'macAddress', 'userAgent', 'sessionCookie', 'internalHostname', 'cidrBlock', 'geoCoordinates', 'lastLogin', 'deviceType'],
   'Biometric / Special-Category': ['firstName', 'lastName', 'dob', 'fingerprintHash', 'faceEmbeddingId', 'voiceprintId', 'irisScanId'],

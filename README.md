@@ -28,7 +28,9 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **Scorecard** — load your tool's per-column results (JSON or CSV), say what each of its labels means,
   and see recall, false positives and whether near-misses were told apart. Export as Markdown or JSON.
 - **Near-miss / DLP-Negative controls** — the same identifiers with the check digit deliberately broken,
-  to measure a detector's false-positive rate.
+  a never-issued range or two digits swapped, plus hard negatives (timestamps, order and tracking
+  numbers) that only look like identifiers. Each is guaranteed valid as nothing, to measure a
+  detector's false-positive rate.
 - **Secret-scanner bait** — AWS/GitHub/Stripe/Google keys, JWT, bcrypt, PEM, basic-auth URLs in vendor-accurate shapes.
 - **Region-specific IDs** — India (Aadhaar, PAN, GSTIN, UPI, Voter ID, IFSC, ABHA, vehicle reg…), US, UK, EU, Saudi.
 - **Compliance tagging (beta)** — see which regulations (GDPR / HIPAA / DPDP) each column falls under,
@@ -76,8 +78,8 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
   multi-hour runs prefer `npm run build && npm run preview` (or the live demo) over `npm run dev`,
   whose dev server reloads the page when it reconnects.
 - **Seeds** — streamed output is seeded per 5,000-row chunk, so the same seed and row count always
-  reproduce the same file. `npm test` pins a hash of seeded output, so a change to it is always deliberate
-  and comes with a bump of `GENERATOR_VERSION`, which the answer key records. Seeded files above 100k rows made before this scheme do not match.
+  reproduce the same file. `npm test` pins a hash of each column's seeded output, so a change to it is always
+  deliberate and comes with a bump of `GENERATOR_VERSION`, which the answer key records. Seeded files above 100k rows made before this scheme do not match.
 - **Seeded dates** — with a seed, relative dates (date of birth, age, created-at, hire date, last
   login, graduation year) are measured from a fixed reference date, 2026-01-01 UTC, not today, so
   the output is the same on any day. Leave the seed blank for dates relative to now.
@@ -91,6 +93,7 @@ Above 100k rows the app skips the in-memory preview and streams straight to one 
 | `npm run preview` | Preview the production build |
 | `npm run lint` | TypeScript type-check (`tsc --noEmit`) |
 | `npm test` | Self-checks: checksum round-trips, format asserts, the pinned seed contract, the streaming writer, the answer key, the scorecard, and that COLUMNS.md covers every column |
+| `npm run pin-seed` | Records the seeded output of new columns in `src/lib/seed-contract.json`. Refuses to overwrite a changed column until `GENERATOR_VERSION` is bumped |
 | `npm run smoke` | Builds, then drives the real app in headless Chrome: generate, export, both large-file paths, keyboard use, answer key, scorecard. Needs Chrome; set `CHROME` to its path if it is not found |
 | `npm run server` | Optional API server (see below) |
 

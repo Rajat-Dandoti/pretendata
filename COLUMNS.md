@@ -244,6 +244,33 @@ card, in the same dashed/plain shapes) — bumping a random number would leave ~
 | EAN-13 (near-miss) | `ean13_invalid` | `ean13` |
 | ISIN (near-miss) | `isin_invalid` | `isin` |
 | Iqama (near-miss) | `iqama_invalid` | `iqama` |
+| Routing Number (near-miss) | `routingNumber_invalid` | `routingNumber` |
+| DEA Number (near-miss) | `dea_invalid` | `dea` |
+
+Three more are wrong in a different way than a bumped check digit:
+
+| Column | ID | Origin | How it is wrong |
+|---|---|---|---|
+| SSN (never issued) | `ssn_invalid` | `ssn` | Area `000`, `666` or `900`–`999`, which are never assigned |
+| Aadhaar (wrong prefix) | `aadhaar_prefix` | `aadhaar` | Correct Verhoeff digit, but starts with `0` or `1` |
+| Credit Card (transposed) | `creditCard_transposed` | `creditCard` | Two neighbouring digits swapped — the typing error Luhn exists to catch |
+
+**Negative for every detector.** Every DLP-Negative value is redrawn until it passes *no* validator,
+not just its origin's. Without that, about one broken EAN-13 in ten passes the card check, and one
+broken NPI in eleven is a valid NHS number. `npm test` checks it.
+
+### Hard negatives
+
+Ordinary business values that merely look like identifiers. A detector that fires on these is
+matching digits, not meaning.
+
+| Column | ID | Shape | Looks like |
+|---|---|---|---|
+| Epoch Timestamp (s) | `epochSeconds` | 10 digits | NPI, NHS number, phone |
+| Epoch Timestamp (ms) | `epochMillis` | 13 digits | EAN-13, 13-digit card |
+| Order Number | `orderNumber` | 12 digits, first 2–9 | Aadhaar |
+| Tracking Number | `trackingNumber` | `1Z` + 16 upper alphanumeric | A licence or account ID |
+| SKU Code | `skuCode` | `SKU-AA00-0000` | A reference number |
 
 ## Chaos (Malformed)
 
@@ -272,7 +299,7 @@ Education / Students, Technical / IT.
 
 **DLP-focused** —
 - `DLP Detection Test` — one of every checksum-valid identifier; everything should fire.
-- `DLP False-Positive Test` — the near-miss siblings; nothing should fire.
+- `DLP False-Positive Test` — every near-miss and hard negative next to a name and an email; none of the controls should fire.
 - `Secrets Leak Test` — all Secrets columns.
 - `App Telemetry` — Network + device/login fields.
 - `Biometric / Special-Category` — the four biometric templates + basic PII.
@@ -286,10 +313,14 @@ Education / Students, Technical / IT.
 
 1. Add one `ColumnDef` to `AVAILABLE_COLUMNS` in `schema.ts` (`id`, `name`, `category`, `generate`, `defaultSelected`).
 2. If it's region-specific or checksum-bearing, add a `COLUMN_DLP_META[id]` entry (`region`, `validation`).
-3. New checksum? Add the generator + validator to `validators.ts` and an assert to its `_selfCheck()`.
+3. New checksum? Add the generator to `validators.ts` and its validity function to `VALIDATORS`, with a
+   known-good value from an official source in `KNOWN_GOOD`. A near-miss or other negative control goes
+   through `negative()` so it is valid as nothing.
 4. New category? Add it to the `PrivacyCategory` union, `CATEGORY_COLORS` **and**
    `CATEGORY_EXPECTATION` — the UI, exports and answer key all read generically, so nothing else changes.
    If the category's default expectation is wrong for the new column, add it to `EXPECTATION_OVERRIDES`.
-5. Document it in this file — `npm test` fails if a column id or preset name is missing here, or if a
+5. Run `npm run pin-seed` to record the new column's seeded output. It refuses if an existing column's
+   output changed; that is a break of the seed contract and needs a `GENERATOR_VERSION` bump.
+6. Document it in this file — `npm test` fails if a column id or preset name is missing here, or if a
    Column Reference pattern does not match what its column emits.
-6. `npm run lint && npm test`.
+7. `npm run lint && npm test`.

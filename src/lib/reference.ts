@@ -72,6 +72,11 @@ const COLUMN_PATTERNS: Record<string, string> = {
   sessionCookie: 'sid=[0-9a-f]{40}',
   cidrBlock: '\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2}',
   ipv6Address: '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}',
+  epochSeconds: '\\d{10}',
+  epochMillis: '\\d{13}',
+  orderNumber: '[2-9]\\d{11}',
+  trackingNumber: '1Z[A-Z0-9]{16}',
+  skuCode: 'SKU-[A-Z]{2}\\d{2}-\\d{4}',
 };
 
 /** Regex/shape for a column, or undefined if it has no fixed pattern. */

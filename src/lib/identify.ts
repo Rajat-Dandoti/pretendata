@@ -3,7 +3,7 @@
 // shaped like an SSN and like a routing number, which is exactly how detectors confuse them.
 import { AVAILABLE_COLUMNS } from '../data/schema';
 import { describeValidation, patternFor } from './reference';
-import { VALIDATORS, breakChecksum } from './validators';
+import { VALIDATORS, breakChecksum, validAs } from './validators';
 import { generateRows } from './generate';
 
 export type MatchStatus =
@@ -78,11 +78,26 @@ export function _selfCheck() {
   for (const c of nearMiss) {
     const origin = c.validation!.slice('near-miss-of:'.length);
     if (!VALIDATORS[origin]) throw new Error(`FAIL: near-miss ${c.id} has no validator for ${origin}`);
-    const passes = rows.find(r => VALIDATORS[origin](r[c.id]));
-    if (passes) throw new Error(`FAIL: near-miss ${c.id} produced a valid ${origin}: ${passes[c.id]}`);
     const seen = identify(rows[0][c.id]).find(m => m.id === origin);
     if (seen?.status !== 'invalid') throw new Error(`FAIL: identify should show ${rows[0][c.id]} as an invalid ${origin}, got ${JSON.stringify(seen)}`);
   }
+  // Every negative control — near-miss or hard negative — is valid as nothing at all, not merely
+  // invalid as the thing it imitates.
+  const negatives = AVAILABLE_COLUMNS.filter(c => c.category === 'DLP-Negative');
+  for (const r of generateRows({ columnIds: negatives.map(c => c.id), rowCount: 3000, seed: 22 })) {
+    for (const c of negatives) {
+      const as = validAs(r[c.id]);
+      if (as.length) throw new Error(`FAIL: negative control ${c.id} produced ${r[c.id]}, which is a valid ${as.join(' and ')}`);
+    }
+  }
+  // …and the new ways of being almost right are what they claim to be.
+  const odd = generateRows({ columnIds: ['ssn_invalid', 'aadhaar_prefix', 'creditCard', 'creditCard_transposed', 'epochSeconds', 'epochMillis'], rowCount: 300, seed: 23 });
+  if (odd.some(r => !/^(000|666|9\d\d)-\d{2}-\d{4}$/.test(r.ssn_invalid))) throw new Error('FAIL: never-issued SSN range');
+  if (odd.some(r => !/^[01]\d{11}$/.test(r.aadhaar_prefix))) throw new Error('FAIL: wrong-prefix Aadhaar');
+  if (odd.some(r => !/^\d{10}$/.test(r.epochSeconds) || !/^\d{13}$/.test(r.epochMillis))) throw new Error('FAIL: epoch timestamps');
+  const shape = (v: string) => v.replace(/\d/g, '9');
+  const cardShapes = new Set(odd.map(r => shape(r.creditCard)));
+  if (odd.some(r => !cardShapes.has(shape(r.creditCard_transposed)))) throw new Error('FAIL: a transposed card must keep a card shape');
   // The confusion detectors really make: one bare number, two identifiers.
   const both = identify('078051120').filter(m => m.status === 'valid').map(m => m.id);
   if (!both.includes('routingNumber') || !both.includes('ssn')) throw new Error(`FAIL: 078051120 should be a valid routing number and SSN, got ${both}`);
