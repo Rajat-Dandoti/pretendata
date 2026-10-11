@@ -89,6 +89,28 @@ export const PACKS: Record<PackId, Pack> = {
 
 export const PACK_IDS = Object.keys(PACKS) as PackId[];
 
+// Real ICD-10-CM codes with what they mean, for the diagnosis column: detectors with a code
+// list recognise these, where a random "A12.3" matches nothing.
+export const ICD10_CODES = [
+  'E11.9', 'I10', 'J45.909', 'F32.9', 'M54.5', 'N39.0', 'K21.9', 'J06.9', 'E78.5', 'I25.10', 'F41.1', 'G43.909', 'J18.9', 'E03.9', 'I48.91',
+  'N18.3', 'D50.9', 'M17.11', 'B20', 'Z34.90', 'R07.9', 'R51.9', 'K35.80', 'C50.911', 'E66.9', 'F10.20', 'J44.9', 'I63.9', 'A09', 'G40.909',
+];
+export const MEDICATIONS = [
+  'metformin 500 mg', 'lisinopril 10 mg', 'atorvastatin 20 mg', 'amlodipine 5 mg', 'levothyroxine 75 mcg', 'omeprazole 20 mg', 'sertraline 50 mg',
+  'salbutamol 100 mcg inhaler', 'amoxicillin 500 mg', 'apixaban 5 mg', 'insulin glargine 20 units', 'losartan 50 mg', 'gabapentin 300 mg', 'prednisolone 5 mg',
+];
+export const LAB_RESULTS = [
+  () => `HbA1c ${(5 + Math.random() * 5).toFixed(1)}%`,
+  () => `LDL cholesterol ${(1.5 + Math.random() * 4).toFixed(1)} mmol/L`,
+  () => `eGFR ${Math.round(25 + Math.random() * 75)} mL/min`,
+  () => `Haemoglobin ${(8 + Math.random() * 8).toFixed(1)} g/dL`,
+  () => `TSH ${(0.3 + Math.random() * 7).toFixed(2)} mIU/L`,
+  () => `HIV viral load ${Math.random() < 0.6 ? 'undetectable' : Math.round(50 + Math.random() * 90000) + ' copies/mL'}`,
+];
+export const RELIGIONS = ['Hindu', 'Muslim', 'Christian', 'Sikh', 'Buddhist', 'Jewish', 'Jain', 'None', 'Prefer not to say'];
+export const POLITICAL_VIEWS = ['Conservative', 'Liberal', 'Socialist', 'Green', 'Nationalist', 'Centrist', 'Not affiliated'];
+export const UNIONS = ['Member — Unite', 'Member — UNISON', 'Member — IG Metall', 'Member — AFL-CIO affiliate', 'Member — INTUC', 'Not a member'];
+
 // The Medical Notes column: clinical sentences with health content but no identifiers, so a
 // content-aware detector has something to find where there used to be lorem ipsum.
 export const CLINICAL_SENTENCES = [

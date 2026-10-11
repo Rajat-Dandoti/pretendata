@@ -9,7 +9,7 @@ import type { LocaleId } from '../lib/locale';
 
 export const BENCHMARK_VERSION = 1;
 /** GENERATOR_VERSION these benchmarks were pinned at. */
-export const BENCHMARK_GENERATOR = 3;
+export const BENCHMARK_GENERATOR: number = 4;
 
 export interface Benchmark {
   id: string;
@@ -35,7 +35,7 @@ export const BENCHMARKS: Benchmark[] = [
     rowCount: 10_000,
     seed: 1001,
     locale: 'en_IN',
-    sha256: 'cbe88c09d242c2a30f57f262ea79ba7d0a6d41682c38ecc1a59354f2f0c86d95',
+    sha256: 'c20afeef3ef9bbd89341195dbadfc4716bc847fb45e2c97f6b1375b975cd5070',
   },
   {
     id: 'global',
@@ -62,7 +62,7 @@ export const BENCHMARKS: Benchmark[] = [
     rowCount: 10_000,
     seed: 1002,
     locale: 'mix',
-    sha256: 'b5d6c6de14b520705f8c55fb40360436a55bedd15027d73315fb31155e5da002',
+    sha256: 'b6837ce1558b2efbb1ab376d7cabacd058799c33f7ab1bfbb42a918699065fcf',
   },
   {
     id: 'secrets',

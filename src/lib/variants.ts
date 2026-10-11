@@ -21,6 +21,8 @@ const LABELS: Record<string, string[]> = {
   ssn: ['SSN', 'SSN#', 'Social Security No'], aadhaar: ['Aadhaar', 'Aadhaar No', 'UID'], creditCard: ['Card', 'CC', 'Card No'],
   iban: ['IBAN'], npi: ['NPI'], nhsNumber: ['NHS No', 'NHS Number'], gstin: ['GSTIN', 'GST No'], vin: ['VIN'], imei: ['IMEI'],
   iqama: ['Iqama', 'Iqama No'], dea: ['DEA', 'DEA#'], routingNumber: ['Routing', 'ABA', 'RTN'],
+  canadaSin: ['SIN', 'Social Insurance No'], brazilCpf: ['CPF'], spainDni: ['DNI', 'NIF'], netherlandsBsn: ['BSN'], franceNir: ['NIR', 'No SS'],
+  singaporeNric: ['NRIC'], australiaTfn: ['TFN'], chinaResidentId: ['ID No'], southAfricaId: ['ID No', 'RSA ID'], uaeEmiratesId: ['Emirates ID', 'EID'], ukNino: ['NI No', 'NINO'],
 };
 /** Columns that take variants: should-fire identifiers with a validator, so every form can be checked. */
 export const VARIANT_IDS = new Set(Object.keys(LABELS));

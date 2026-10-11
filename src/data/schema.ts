@@ -8,9 +8,11 @@ import {
   generateUPI, generateVoterId, generateVehicleRegIndia, generateIFSC, generateABHA, generateIqama,
   generateMobile, generateJWT,
   negative, generateSSNNeverIssued, generateAadhaarWrongPrefix, transposeDigits,
+  generateSIN, generateCPF, generateCNPJ, generateITIN, generateNINO, generateDNI, generateNIE, generateBSN, generateNIR,
+  generateNRIC, generateTFN, generateChinaId, generateSouthAfricaId, generateEmiratesId,
 } from '../lib/validators';
 import type { LocaleId } from '../lib/locale';
-import { CLINICAL_SENTENCES } from './templates';
+import { CLINICAL_SENTENCES, ICD10_CODES, LAB_RESULTS, MEDICATIONS, POLITICAL_VIEWS, RELIGIONS, UNIONS } from './templates';
 
 export type PrivacyCategory = 'PII' | 'PHI' | 'PCI' | 'Secrets' | 'Biometric' | 'Network' | 'Quasi-Identifier' | 'Statistical' | 'Masked' | 'Non-Sensitive' | 'DLP-Negative' | 'Chaos';
 
@@ -21,7 +23,8 @@ export type ValidationKind =
   | 'verhoeff'       // Aadhaar
   | 'mod-97'         // IBAN
   | 'mod-36'         // GSTIN
-  | 'mod-11'         // NHS
+  | 'mod-11'         // NHS, CPF, CNPJ, BSN, NRIC, TFN, China resident ID
+  | 'mod-23'         // Spain DNI / NIE check letter
   | 'mod-10'         // EAN-13, ISIN
   | 'vin-checksum'   // VIN custom mod-11
   | 'npi-luhn'       // NPI = Luhn over 80840-prefixed
@@ -58,6 +61,9 @@ export const CATEGORY_COLORS: Record<PrivacyCategory, string> = {
   'Chaos': 'bg-yellow-100 text-yellow-800 border-yellow-300',
 };
 
+const B64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const B64STD = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
 export const AVAILABLE_COLUMNS: ColumnDef[] = [
   // PII
   { id: 'firstName', name: 'First Name', category: 'PII', generate: (ctx) => ctx.firstName, defaultSelected: true },
@@ -79,17 +85,36 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'driversLicense', name: 'Driver\'s License', category: 'PII', generate: () => faker.string.alphanumeric({ length: 8, casing: 'upper' }), defaultSelected: false },
   { id: 'ipAddress', name: 'IP Address', category: 'PII', generate: () => faker.internet.ipv4(), defaultSelected: false },
   { id: 'macAddress', name: 'MAC Address', category: 'PII', generate: () => faker.internet.mac(), defaultSelected: false },
+  // National identifiers by region. Where the number encodes a birth date or sex, it is the row's own.
+  { id: 'usItin',          name: 'ITIN (US)',             category: 'PII', generate: () => generateITIN(), defaultSelected: false },
+  { id: 'canadaSin',       name: 'SIN (CA)',              category: 'PII', generate: () => generateSIN(), defaultSelected: false },
+  { id: 'brazilCpf',       name: 'CPF (BR)',              category: 'PII', generate: () => generateCPF(), defaultSelected: false },
+  { id: 'brazilCnpj',      name: 'CNPJ (BR)',             category: 'PII', generate: () => generateCNPJ(), defaultSelected: false },
+  { id: 'ukNino',          name: 'National Insurance No (UK)', category: 'PII', generate: () => generateNINO(), defaultSelected: false },
+  { id: 'spainDni',        name: 'DNI (ES)',              category: 'PII', generate: () => generateDNI(), defaultSelected: false },
+  { id: 'spainNie',        name: 'NIE (ES)',              category: 'PII', generate: () => generateNIE(), defaultSelected: false },
+  { id: 'netherlandsBsn',  name: 'BSN (NL)',              category: 'PII', generate: () => generateBSN(), defaultSelected: false },
+  { id: 'franceNir',       name: 'NIR (FR)',              category: 'PII', generate: (ctx) => generateNIR(ctx.dob, ctx.sex), defaultSelected: false },
+  { id: 'singaporeNric',   name: 'NRIC (SG)',             category: 'PII', generate: (ctx) => generateNRIC(ctx.dob), defaultSelected: false },
+  { id: 'australiaTfn',    name: 'TFN (AU)',              category: 'PII', generate: () => generateTFN(), defaultSelected: false },
+  { id: 'chinaResidentId', name: 'Resident ID (CN)',      category: 'PII', generate: (ctx) => generateChinaId(ctx.dob, ctx.sex), defaultSelected: false },
+  { id: 'southAfricaId',   name: 'ID Number (ZA)',        category: 'PII', generate: (ctx) => generateSouthAfricaId(ctx.dob, ctx.sex), defaultSelected: false },
+  { id: 'uaeEmiratesId',   name: 'Emirates ID (AE)',      category: 'PII', generate: (ctx) => generateEmiratesId(ctx.dob), defaultSelected: false },
+  { id: 'indiaPassport',   name: 'Passport (IN)',         category: 'PII', generate: () => `${faker.string.alpha({ length: 1, casing: 'upper' })}${faker.string.numeric(7)}`, defaultSelected: false },
+  { id: 'uan',             name: 'UAN (IN)',              category: 'PII', generate: () => `10${faker.string.numeric(10)}`, defaultSelected: false },
   
   // PHI
   { id: 'mrn', name: 'Medical Record Number', category: 'PHI', generate: () => `MRN-${faker.string.numeric(7)}`, defaultSelected: false },
   { id: 'healthInsuranceId', name: 'Health Insurance ID', category: 'PHI', generate: () => `${faker.string.alpha({ length: 3, casing: 'upper' })}${faker.string.numeric(8)}`, defaultSelected: false },
   { id: 'bloodType', name: 'Blood Type', category: 'PHI', generate: () => faker.helpers.arrayElement(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']), defaultSelected: false },
-  { id: 'diagnosisCode', name: 'ICD-10 Diagnosis', category: 'PHI', generate: () => `${faker.string.alpha({ length: 1, casing: 'upper' })}${faker.string.numeric(2)}.${faker.string.numeric(1)}`, defaultSelected: false },
+  { id: 'diagnosisCode', name: 'ICD-10 Diagnosis', category: 'PHI', generate: () => faker.helpers.arrayElement(ICD10_CODES), defaultSelected: false },
   { id: 'medicalNotes', name: 'Medical Notes', category: 'PHI', generate: () => faker.helpers.arrayElement(CLINICAL_SENTENCES), defaultSelected: false },
   { id: 'npi', name: 'NPI (US Provider)', category: 'PHI', generate: () => generateNPI(), defaultSelected: false },
   { id: 'dea', name: 'DEA Number (US)', category: 'PHI', generate: () => generateDEA(), defaultSelected: false },
   { id: 'nhsNumber', name: 'NHS Number (UK)', category: 'PHI', generate: () => generateNHSNumber(), defaultSelected: false },
   { id: 'abha', name: 'ABHA Health ID (IN)', category: 'PHI', generate: () => generateABHA(), defaultSelected: false },
+  { id: 'medication', name: 'Medication', category: 'PHI', generate: () => faker.helpers.arrayElement(MEDICATIONS), defaultSelected: false },
+  { id: 'labResult', name: 'Lab Result', category: 'PHI', generate: () => faker.helpers.arrayElement(LAB_RESULTS)(), defaultSelected: false },
 
   // PCI
   { id: 'creditCard', name: 'Credit Card', category: 'PCI', generate: () => faker.finance.creditCardNumber(), defaultSelected: false },
@@ -98,12 +123,17 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'accountNumber', name: 'Account Number', category: 'PCI', generate: () => faker.finance.accountNumber(10), defaultSelected: false },
   { id: 'iban', name: 'IBAN', category: 'PCI', generate: () => generateIBAN(), defaultSelected: false },
   { id: 'ifsc', name: 'IFSC Code (IN)', category: 'PCI', generate: () => generateIFSC(), defaultSelected: false },
+  { id: 'cardExpiry', name: 'Card Expiry', category: 'PCI', generate: () => { const d = faker.date.future({ years: 5 }); return `${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCFullYear()).slice(2)}`; }, defaultSelected: false },
 
   // Quasi-Identifier
   { id: 'zipCode', name: 'Zip Code', category: 'Quasi-Identifier', generate: () => faker.location.zipCode(), defaultSelected: true },
   { id: 'dob', name: 'Date of Birth', category: 'Quasi-Identifier', generate: (ctx) => ctx.dob.toISOString().split('T')[0], defaultSelected: true },
   { id: 'gender', name: 'Gender', category: 'Quasi-Identifier', generate: (ctx) => ctx.gender, defaultSelected: true },
   { id: 'ethnicity', name: 'Ethnicity', category: 'Quasi-Identifier', generate: () => faker.helpers.arrayElement(['Asian', 'Black', 'Hispanic', 'White', 'Other']), defaultSelected: false },
+  // GDPR Art.9 special categories that are plain words: sensitive by meaning, not by shape.
+  { id: 'religion', name: 'Religion', category: 'Quasi-Identifier', generate: () => faker.helpers.arrayElement(RELIGIONS), defaultSelected: false },
+  { id: 'politicalOpinion', name: 'Political Opinion', category: 'Quasi-Identifier', generate: () => faker.helpers.arrayElement(POLITICAL_VIEWS), defaultSelected: false },
+  { id: 'unionMembership', name: 'Trade Union Membership', category: 'Quasi-Identifier', generate: () => faker.helpers.arrayElement(UNIONS), defaultSelected: false },
   { id: 'city', name: 'City', category: 'Quasi-Identifier', generate: (ctx) => (ctx.faker ?? faker).location.city(), defaultSelected: false },
   { id: 'jobTitle', name: 'Job Title', category: 'Quasi-Identifier', generate: (ctx) => (ctx.faker ?? faker).person.jobTitle(), defaultSelected: false },
   { id: 'department', name: 'Department', category: 'Quasi-Identifier', generate: () => faker.commerce.department(), defaultSelected: false },
@@ -134,6 +164,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'last4SSN', name: 'Last 4 SSN', category: 'Masked', generate: () => faker.string.numeric(4), defaultSelected: false },
   { id: 'tokenizedCard', name: 'Tokenized Card', category: 'Masked', generate: () => `****-****-****-${faker.string.numeric(4)}`, defaultSelected: false },
   { id: 'maskedAccount', name: 'Masked Account', category: 'Masked', generate: () => `******${faker.string.numeric(4)}`, defaultSelected: false },
+  { id: 'maskedAadhaar', name: 'Masked Aadhaar (IN)', category: 'Masked', generate: () => `XXXX XXXX ${faker.string.numeric(4)}`, defaultSelected: false },
   
   // Non-Sensitive
   { id: 'transactionId', name: 'Transaction ID', category: 'Non-Sensitive', generate: () => faker.string.alphanumeric(10).toUpperCase(), defaultSelected: true },
@@ -149,6 +180,7 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'crmId', name: 'CRM ID', category: 'Non-Sensitive', generate: () => `CUST-${faker.string.numeric(6)}`, defaultSelected: false },
   { id: 'ean13', name: 'EAN-13 Barcode', category: 'Non-Sensitive', generate: () => generateEAN13(), defaultSelected: false },
   { id: 'isin', name: 'ISIN (Security)', category: 'Non-Sensitive', generate: () => generateISIN(), defaultSelected: false },
+  { id: 'swiftBic', name: 'SWIFT / BIC', category: 'Non-Sensitive', generate: () => `${faker.string.alpha({ length: 4, casing: 'upper' })}${faker.helpers.arrayElement(['GB', 'DE', 'FR', 'US', 'IN', 'SG', 'NL', 'ES'])}${faker.string.alphanumeric({ length: 2, casing: 'upper' })}${faker.helpers.arrayElement(['', 'XXX', faker.string.alphanumeric({ length: 3, casing: 'upper' })])}`, defaultSelected: false },
 
   // Secrets / Credentials — what secret scanners (Gitleaks, TruffleHog, GitHub scanning) hunt.
   // Pattern-only: each has a distinct vendor prefix/shape; none carry a checksum we validate.
@@ -162,6 +194,18 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'bcryptHash',     name: 'Bcrypt Password Hash', category: 'Secrets', generate: () => `$2b$10$${faker.string.alphanumeric({ length: 53 })}`, defaultSelected: false },
   { id: 'privateKeyPem',  name: 'PEM Private Key',     category: 'Secrets', generate: () => `-----BEGIN RSA PRIVATE KEY-----\n${faker.string.alphanumeric({ length: 64 })}\n${faker.string.alphanumeric({ length: 64 })}\n-----END RSA PRIVATE KEY-----`, defaultSelected: false },
   { id: 'basicAuthUrl',   name: 'Basic-Auth URL',      category: 'Secrets', generate: () => `https://${faker.internet.username().toLowerCase()}:${faker.internet.password({ length: 12 })}@${faker.internet.domainName()}`, defaultSelected: false },
+  // Newer vendor formats. Shapes follow each vendor's documented prefix and length; like the ones above
+  // they are random and never valid, and vendors change formats, so treat the shape as of 2025.
+  { id: 'slackBotToken',     name: 'Slack Bot Token',       category: 'Secrets', generate: () => `xoxb-${faker.string.numeric(12)}-${faker.string.numeric(13)}-${faker.string.alphanumeric({ length: 24 })}`, defaultSelected: false },
+  { id: 'openaiKey',         name: 'OpenAI API Key',        category: 'Secrets', generate: () => `sk-proj-${faker.string.fromCharacters(B64URL, 74)}T3BlbkFJ${faker.string.fromCharacters(B64URL, 74)}`, defaultSelected: false },
+  { id: 'anthropicKey',      name: 'Anthropic API Key',     category: 'Secrets', generate: () => `sk-ant-api03-${faker.string.fromCharacters(B64URL, 93)}AA`, defaultSelected: false },
+  { id: 'npmToken',          name: 'npm Access Token',      category: 'Secrets', generate: () => `npm_${faker.string.alphanumeric({ length: 36 })}`, defaultSelected: false },
+  { id: 'sendgridKey',       name: 'SendGrid API Key',      category: 'Secrets', generate: () => `SG.${faker.string.fromCharacters(B64URL, 22)}.${faker.string.fromCharacters(B64URL, 43)}`, defaultSelected: false },
+  { id: 'twilioKey',         name: 'Twilio API Key SID',    category: 'Secrets', generate: () => `SK${faker.string.hexadecimal({ length: 32, casing: 'lower', prefix: '' })}`, defaultSelected: false },
+  { id: 'azureStorageKey',   name: 'Azure Storage Key',     category: 'Secrets', generate: () => `${faker.string.fromCharacters(B64STD, 86)}==`, defaultSelected: false },
+  { id: 'dbConnectionString', name: 'Database Connection String', category: 'Secrets', generate: () => `postgres://${faker.internet.username().toLowerCase().replace(/[^a-z0-9]/g, '')}:${faker.internet.password({ length: 16 })}@db-${faker.number.int({ min: 1, max: 9 })}.internal.corp:5432/${faker.helpers.arrayElement(['app', 'billing', 'users', 'analytics'])}`, defaultSelected: false },
+  { id: 'sshPrivateKey',     name: 'OpenSSH Private Key',   category: 'Secrets', generate: () => `-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA${faker.string.fromCharacters(B64STD, 46)}\n${faker.string.fromCharacters(B64STD, 70)}\n${faker.string.fromCharacters(B64STD, 70)}\n-----END OPENSSH PRIVATE KEY-----`, defaultSelected: false },
+  { id: 'gcpServiceAccount', name: 'GCP Service Account Key', category: 'Secrets', generate: () => JSON.stringify({ type: 'service_account', project_id: `proj-${faker.string.alphanumeric({ length: 8, casing: 'lower' })}`, private_key_id: faker.string.hexadecimal({ length: 40, casing: 'lower', prefix: '' }), private_key: `-----BEGIN PRIVATE KEY-----\n${faker.string.fromCharacters(B64STD, 64)}\n${faker.string.fromCharacters(B64STD, 64)}\n-----END PRIVATE KEY-----\n`, client_email: `svc-${faker.string.alphanumeric({ length: 6, casing: 'lower' })}@proj.iam.gserviceaccount.com` }), defaultSelected: false },
 
   // Biometric — GDPR Art.9 / CCPA special category. Real systems store opaque templates/vectors, never raw scans.
   { id: 'fingerprintHash', name: 'Fingerprint Template', category: 'Biometric', generate: () => faker.string.hexadecimal({ length: 64, casing: 'lower', prefix: '' }), defaultSelected: false },
@@ -190,6 +234,16 @@ export const AVAILABLE_COLUMNS: ColumnDef[] = [
   { id: 'ean13_invalid',      name: 'EAN-13 (near-miss)',      category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateEAN13())),      defaultSelected: false },
   { id: 'isin_invalid',       name: 'ISIN (near-miss)',        category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateISIN())),       defaultSelected: false },
   { id: 'iqama_invalid',      name: 'Iqama (near-miss)',       category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateIqama())),      defaultSelected: false },
+  { id: 'canadaSin_invalid',       name: 'SIN (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateSIN())),            defaultSelected: false },
+  { id: 'brazilCpf_invalid',       name: 'CPF (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateCPF())),            defaultSelected: false },
+  { id: 'spainDni_invalid',        name: 'DNI (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateDNI())),            defaultSelected: false },
+  { id: 'netherlandsBsn_invalid',  name: 'BSN (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateBSN())),            defaultSelected: false },
+  { id: 'franceNir_invalid',       name: 'NIR (near-miss)',         category: 'DLP-Negative', generate: (ctx) => negative(() => breakChecksum(generateNIR(ctx.dob, ctx.sex))), defaultSelected: false },
+  { id: 'singaporeNric_invalid',   name: 'NRIC (near-miss)',        category: 'DLP-Negative', generate: (ctx) => negative(() => breakChecksum(generateNRIC(ctx.dob))), defaultSelected: false },
+  { id: 'australiaTfn_invalid',    name: 'TFN (near-miss)',         category: 'DLP-Negative', generate: () => negative(() => breakChecksum(generateTFN())),            defaultSelected: false },
+  { id: 'chinaResidentId_invalid', name: 'Resident ID (near-miss)', category: 'DLP-Negative', generate: (ctx) => negative(() => breakChecksum(generateChinaId(ctx.dob, ctx.sex))), defaultSelected: false },
+  { id: 'southAfricaId_invalid',   name: 'ZA ID (near-miss)',       category: 'DLP-Negative', generate: (ctx) => negative(() => breakChecksum(generateSouthAfricaId(ctx.dob, ctx.sex))), defaultSelected: false },
+  { id: 'uaeEmiratesId_invalid',   name: 'Emirates ID (near-miss)', category: 'DLP-Negative', generate: (ctx) => negative(() => breakChecksum(generateEmiratesId(ctx.dob))), defaultSelected: false },
   // More ways to be almost right: a never-issued range, a wrong prefix, a typing error.
   { id: 'ssn_invalid',            name: 'SSN (never issued)',        category: 'DLP-Negative', generate: () => negative(generateSSNNeverIssued),                                  defaultSelected: false },
   { id: 'aadhaar_prefix',         name: 'Aadhaar (wrong prefix)',    category: 'DLP-Negative', generate: () => negative(generateAadhaarWrongPrefix),                              defaultSelected: false },
@@ -237,6 +291,22 @@ const COLUMN_DLP_META: Record<string, Partial<Pick<ColumnDef, 'region' | 'valida
   phone:       { validation: 'pattern-only' },
   ipAddress:   { validation: 'pattern-only' },
   macAddress:  { validation: 'pattern-only' },
+  usItin:          { region: 'US', validation: 'pattern-only' },
+  canadaSin:       { region: 'CA', validation: 'luhn' },
+  brazilCpf:       { region: 'BR', validation: 'mod-11' },
+  brazilCnpj:      { region: 'BR', validation: 'mod-11' },
+  ukNino:          { region: 'UK', validation: 'pattern-only' },
+  spainDni:        { region: 'ES', validation: 'mod-23' },
+  spainNie:        { region: 'ES', validation: 'mod-23' },
+  netherlandsBsn:  { region: 'NL', validation: 'mod-11' },
+  franceNir:       { region: 'FR', validation: 'mod-97' },
+  singaporeNric:   { region: 'SG', validation: 'mod-11' },
+  australiaTfn:    { region: 'AU', validation: 'mod-11' },
+  chinaResidentId: { region: 'CN', validation: 'mod-11' },
+  southAfricaId:   { region: 'ZA', validation: 'luhn' },
+  uaeEmiratesId:   { region: 'AE', validation: 'luhn' },
+  indiaPassport:   { region: 'IN', validation: 'pattern-only' },
+  uan:             { region: 'IN', validation: 'pattern-only' },
   // PHI
   mrn:         { validation: 'pattern-only' },
   healthInsuranceId: { validation: 'pattern-only' },
@@ -252,6 +322,7 @@ const COLUMN_DLP_META: Record<string, Partial<Pick<ColumnDef, 'region' | 'valida
   accountNumber:  { validation: 'pattern-only' },
   iban:        { region: 'INTL', validation: 'mod-97' },
   ifsc:        { region: 'IN', validation: 'pattern-only' },
+  cardExpiry:  { validation: 'pattern-only' },
   // Quasi-Identifier
   zipCode:     { validation: 'pattern-only' },
   gstin:       { region: 'IN', validation: 'mod-36' },
@@ -264,9 +335,11 @@ const COLUMN_DLP_META: Record<string, Partial<Pick<ColumnDef, 'region' | 'valida
   last4SSN:    { region: 'US', validation: 'pattern-only' },
   tokenizedCard:  { validation: 'pattern-only' },
   maskedAccount:  { validation: 'pattern-only' },
+  maskedAadhaar:  { region: 'IN', validation: 'pattern-only' },
   // Non-Sensitive
   ean13:       { validation: 'mod-10' },
   isin:        { validation: 'mod-10' },
+  swiftBic:    { region: 'INTL', validation: 'pattern-only' },
   // Secrets / Biometric / Network — pattern-shaped (distinct regex signature), no locale.
   awsAccessKey:    { region: 'INTL', validation: 'pattern-only' },
   awsSecretKey:    { region: 'INTL', validation: 'pattern-only' },
@@ -277,6 +350,16 @@ const COLUMN_DLP_META: Record<string, Partial<Pick<ColumnDef, 'region' | 'valida
   bcryptHash:      { region: 'INTL', validation: 'pattern-only' },
   privateKeyPem:   { region: 'INTL', validation: 'pattern-only' },
   basicAuthUrl:    { region: 'INTL', validation: 'pattern-only' },
+  slackBotToken:   { region: 'INTL', validation: 'pattern-only' },
+  openaiKey:       { region: 'INTL', validation: 'pattern-only' },
+  anthropicKey:    { region: 'INTL', validation: 'pattern-only' },
+  npmToken:        { region: 'INTL', validation: 'pattern-only' },
+  sendgridKey:     { region: 'INTL', validation: 'pattern-only' },
+  twilioKey:       { region: 'INTL', validation: 'pattern-only' },
+  azureStorageKey: { region: 'INTL', validation: 'pattern-only' },
+  dbConnectionString: { region: 'INTL', validation: 'pattern-only' },
+  sshPrivateKey:   { region: 'INTL', validation: 'pattern-only' },
+  gcpServiceAccount: { region: 'INTL', validation: 'pattern-only' },
   fingerprintHash: { region: 'INTL', validation: 'pattern-only' },
   faceEmbeddingId: { region: 'INTL', validation: 'pattern-only' },
   voiceprintId:    { region: 'INTL', validation: 'pattern-only' },
@@ -296,6 +379,16 @@ const COLUMN_DLP_META: Record<string, Partial<Pick<ColumnDef, 'region' | 'valida
   ean13_invalid:      {                 validation: 'near-miss-of:ean13' },
   isin_invalid:       {                 validation: 'near-miss-of:isin' },
   iqama_invalid:      { region: 'SA',   validation: 'near-miss-of:iqama' },
+  canadaSin_invalid:       { region: 'CA', validation: 'near-miss-of:canadaSin' },
+  brazilCpf_invalid:       { region: 'BR', validation: 'near-miss-of:brazilCpf' },
+  spainDni_invalid:        { region: 'ES', validation: 'near-miss-of:spainDni' },
+  netherlandsBsn_invalid:  { region: 'NL', validation: 'near-miss-of:netherlandsBsn' },
+  franceNir_invalid:       { region: 'FR', validation: 'near-miss-of:franceNir' },
+  singaporeNric_invalid:   { region: 'SG', validation: 'near-miss-of:singaporeNric' },
+  australiaTfn_invalid:    { region: 'AU', validation: 'near-miss-of:australiaTfn' },
+  chinaResidentId_invalid: { region: 'CN', validation: 'near-miss-of:chinaResidentId' },
+  southAfricaId_invalid:   { region: 'ZA', validation: 'near-miss-of:southAfricaId' },
+  uaeEmiratesId_invalid:   { region: 'AE', validation: 'near-miss-of:uaeEmiratesId' },
   ssn_invalid:           { region: 'US', validation: 'near-miss-of:ssn' },
   aadhaar_prefix:        { region: 'IN', validation: 'near-miss-of:aadhaar' },
   creditCard_transposed: {               validation: 'near-miss-of:creditCard' },
@@ -351,6 +444,8 @@ const EXPECTATION_OVERRIDES: Record<string, Expectation> = {
   employeeId: 'context', studentId: 'context', crmId: 'context',
   // A quasi-identifier that happens to be a number.
   age: 'context',
+  // An expiry date alone identifies no card.
+  cardExpiry: 'context',
 };
 
 export function expectationFor(col: Pick<ColumnDef, 'id' | 'category'>): Expectation {
@@ -370,7 +465,8 @@ export const PRESETS: Record<string, string[]> = {
   'DLP False-Positive Test': ['firstName', 'email', 'aadhaar_invalid', 'creditCard_invalid', 'iban_invalid', 'npi_invalid', 'nhsNumber_invalid', 'gstin_invalid', 'vin_invalid', 'imei_invalid', 'ean13_invalid', 'isin_invalid',
     'ssn_invalid', 'aadhaar_prefix', 'creditCard_transposed', 'routingNumber_invalid', 'dea_invalid',
     'epochSeconds', 'epochMillis', 'orderNumber', 'trackingNumber', 'skuCode'],
-  'Secrets Leak Test': ['awsAccessKey', 'awsSecretKey', 'githubPAT', 'stripeKey', 'googleApiKey', 'jwt', 'bcryptHash', 'privateKeyPem', 'basicAuthUrl'],
+  'Secrets Leak Test': ['awsAccessKey', 'awsSecretKey', 'githubPAT', 'stripeKey', 'googleApiKey', 'jwt', 'bcryptHash', 'privateKeyPem', 'basicAuthUrl',
+    'slackBotToken', 'openaiKey', 'anthropicKey', 'npmToken', 'sendgridKey', 'twilioKey', 'azureStorageKey', 'dbConnectionString', 'sshPrivateKey', 'gcpServiceAccount'],
   'App Telemetry': ['crmId', 'ipAddress', 'ipv6Address', 'macAddress', 'userAgent', 'sessionCookie', 'internalHostname', 'cidrBlock', 'geoCoordinates', 'lastLogin', 'deviceType'],
   'Biometric / Special-Category': ['firstName', 'lastName', 'dob', 'fingerprintHash', 'faceEmbeddingId', 'voiceprintId', 'irisScanId'],
   'Chaos / Malformed': ['firstName', 'email', 'chaosEmpty', 'chaosUnicode', 'chaosSqli', 'chaosXss', 'chaosHomoglyph', 'chaosLong', 'chaosCsvBreak', 'chaosNumeric'],
@@ -378,6 +474,8 @@ export const PRESETS: Record<string, string[]> = {
   'India PII': ['firstName', 'lastName', 'aadhaar', 'pan', 'voterId', 'upiId', 'vehicleRegIndia', 'dlIndia', 'phone', 'email', 'dob', 'gender'],
   'India Fintech': ['firstName', 'lastName', 'pan', 'aadhaar', 'upiId', 'ifsc', 'accountNumber', 'creditScore', 'loanAmount', 'phone', 'email'],
   'US Healthcare': ['firstName', 'lastName', 'ssn', 'mrn', 'npi', 'dea', 'healthInsuranceId', 'bloodType', 'diagnosisCode', 'dob', 'gender'],
+  'National IDs (World)': ['firstName', 'lastName', 'dob', 'gender', 'ssn', 'usItin', 'canadaSin', 'brazilCpf', 'ukNino', 'nhsNumber', 'spainDni', 'netherlandsBsn', 'franceNir',
+    'aadhaar', 'pan', 'singaporeNric', 'australiaTfn', 'chinaResidentId', 'southAfricaId', 'uaeEmiratesId', 'iqama'],
   'EU GDPR Sweep': ['firstName', 'lastName', 'iban', 'dlGermany', 'dlUK', 'email', 'phone', 'ipAddress', 'macAddress', 'dob', 'city'],
 };
 

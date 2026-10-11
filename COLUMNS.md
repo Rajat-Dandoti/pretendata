@@ -48,7 +48,8 @@ Quasi-Identifier are `context`; the rest are `ignore`. A few columns are overrid
 
 - `detect`: `gstin`, `vin`, `imei`, `vehicleRegIndia` (registered identifiers filed under
   Quasi-Identifier), `ipv6Address`, `sessionCookie`.
-- `context`: `employeeId`, `studentId`, `crmId` (assigned to one person, meaningless elsewhere), `age`.
+- `context`: `employeeId`, `studentId`, `crmId` (assigned to one person, meaningless elsewhere), `age`,
+  `cardExpiry` (an expiry date alone identifies no card).
 
 ---
 
@@ -60,11 +61,12 @@ Emitted into the **answer key** so a test harness knows what guarantee each valu
 |---|---|
 | `free-form` | No shape contract (names, lorem, job titles). Default when unset. |
 | `pattern-only` | Regex-shaped, **no checksum** (email, IP, PAN format, API keys). |
-| `luhn` | Luhn mod-10 (credit card, IMEI, Iqama). |
+| `luhn` | Luhn mod-10 (credit card, IMEI, Iqama, SIN, South Africa ID, Emirates ID). |
 | `verhoeff` | Verhoeff (Aadhaar). |
-| `mod-97` | ISO 7064 mod-97-10 (IBAN). |
+| `mod-97` | Mod-97 (IBAN, France NIR). |
 | `mod-36` | GSTIN base-36 weighted. |
-| `mod-11` | NHS number. |
+| `mod-11` | Weighted mod-11: NHS number, CPF, CNPJ, BSN, NRIC, TFN, China resident ID. |
+| `mod-23` | Check letter from the number mod 23: Spain DNI and NIE. |
 | `mod-10` | EAN-13, ISIN (Luhn variant). |
 | `vin-checksum` | VIN transliteration mod-11. |
 | `npi-luhn` | Luhn over an `80840`-prefixed body. |
@@ -96,6 +98,31 @@ Emitted into the **answer key** so a test harness knows what guarantee each valu
 | IP Address | `ipAddress` | — | pattern-only | Faker IPv4 |
 | MAC Address | `macAddress` | — | pattern-only | Faker MAC |
 
+### National identifiers by region
+
+Each checksum below has a validator in `VALIDATORS` and a published example value in the self-check.
+Where the number encodes a birth date or sex, it is the row's own, so it agrees with the Date of Birth
+and Gender columns.
+
+| Column | ID | Region | Validation | Shape / Algorithm |
+|---|---|---|---|---|
+| ITIN | `usItin` | US | pattern-only | `9NN-GG-NNNN`; group from the IRS ranges 50–65, 70–88, 90–92, 94–99 |
+| SIN | `canadaSin` | CA | **luhn** | 9 digits written `NNN NNN NNN`, Luhn; first digit never 0 or 8 |
+| CPF | `brazilCpf` | BR | **mod-11** | `NNN.NNN.NNN-DD`; two mod-11 check digits |
+| CNPJ | `brazilCnpj` | BR | **mod-11** | `NN.NNN.NNN/0001-DD`; two mod-11 check digits over weights 6…2, 9…2 |
+| National Insurance No | `ukNino` | UK | pattern-only | Two letters, six digits, suffix A–D, under HMRC's prefix exclusions; no check digit |
+| DNI | `spainDni` | ES | **mod-23** | 8 digits + letter `TRWAGMYFPDXBNJZSQVHLCKE`[number mod 23] |
+| NIE | `spainNie` | ES | **mod-23** | `X`/`Y`/`Z` (standing for 0/1/2) + 7 digits + the same check letter |
+| BSN | `netherlandsBsn` | NL | **mod-11** | 9 digits passing the "11-proef" (weights 9…2, −1) |
+| NIR | `franceNir` | FR | **mod-97** | Sex, birth year and month, department, commune, order, then key = 97 − (number mod 97). Corsica (2A/2B) not generated |
+| NRIC | `singaporeNric` | SG | **mod-11** | `S` (born before 2000) or `T` + 7 digits + check letter from weights 2,7,6,5,4,3,2 |
+| TFN | `australiaTfn` | AU | **mod-11** | 9 digits; weighted sum (1,4,3,7,5,8,6,9,10) divisible by 11 |
+| Resident ID | `chinaResidentId` | CN | **mod-11** | 6-digit region, birth date, 3-digit order (odd = male), ISO 7064 MOD 11-2 check (may be `X`) |
+| ID Number | `southAfricaId` | ZA | **luhn** | Birth date `YYMMDD`, 4-digit sequence (5000+ = male), citizenship digit, `8`, Luhn check |
+| Emirates ID | `uaeEmiratesId` | AE | **luhn** | `784-YYYY-NNNNNNN-C`; Luhn over all fifteen digits |
+| Passport | `indiaPassport` | IN | pattern-only | One letter + 7 digits |
+| UAN | `uan` | IN | pattern-only | 12 digits starting `10` (provident-fund account number) |
+
 ## PHI
 
 | Column | ID | Region | Validation | Shape / Algorithm |
@@ -103,12 +130,14 @@ Emitted into the **answer key** so a test harness knows what guarantee each valu
 | MRN | `mrn` | — | pattern-only | `MRN-#######` |
 | Health Insurance ID | `healthInsuranceId` | — | pattern-only | 3 alpha + 8 digits |
 | Blood Type | `bloodType` | — | free-form | Enum (A+, AB-, O+, …) |
-| ICD-10 Code | `diagnosisCode` | — | pattern-only | `A##.#` |
+| ICD-10 Code | `diagnosisCode` | — | pattern-only | One of 30 real ICD-10-CM codes (`E11.9`, `I10`, `J45.909` …) |
 | Medical Notes | `medicalNotes` | — | free-form | One of 20 clinical sentences (conditions, results, medication); health content, no identifiers |
 | NPI | `npi` | US | **npi-luhn** | 10 digits; Luhn valid over `80840`+body; body starts 1/2 |
 | DEA Number | `dea` | US | pattern-only | 2 letters + 7 digits; check = `(d1+d3+d5) + 2·(d2+d4+d6)` mod 10 |
 | NHS Number | `nhsNumber` | UK | **mod-11** | 9 digits + mod-11 check (weights 10..2), written `NNN NNN NNNN`; regenerate if check == 10 |
 | ABHA Health ID | `abha` | IN | pattern-only | 14 digits (checksum unconfirmed, so none claimed) |
+| Medication | `medication` | — | free-form | A common drug with its dose, e.g. `metformin 500 mg` |
+| Lab Result | `labResult` | — | free-form | A test with a value in range, e.g. `HbA1c 7.2%`, `eGFR 48 mL/min` |
 
 ## PCI
 
@@ -119,7 +148,8 @@ Emitted into the **answer key** so a test harness knows what guarantee each valu
 | Routing Number | `routingNumber` | US | pattern-only | Faker ABA |
 | Account Number | `accountNumber` | — | pattern-only | Faker 10-digit |
 | IBAN | `iban` | INTL | **mod-97** | Country + 2 check digits + BBAN; `98 − mod97(bban+country+00)`. Registry length and layout per country: DE 22, FR 27, ES 24 (digits); GB 22 and NL 18 (4-letter bank code + digits); IT 27 (CIN letter + digits). National check digits inside the BBAN are not computed |
-| IFSC Code | `ifsc` | IN | pattern-only | 4-letter bank code + `0` + 6 digits |
+| IFSC Code | `ifsc` | IN | pattern-only | A real bank code (`SBIN`, `HDFC`, `ICIC` …) + `0` + 6 digits |
+| Card Expiry | `cardExpiry` | — | pattern-only | `MM/YY`, within five years of the reference date |
 
 ## Secrets / Credentials
 
@@ -137,6 +167,19 @@ prefix/shape is the signature; none carry a checksum we validate.
 | Bcrypt Password Hash | `bcryptHash` | pattern-only | `$2b$10$` + 53 alphanumeric |
 | PEM Private Key | `privateKeyPem` | pattern-only | `-----BEGIN RSA PRIVATE KEY-----` block, 2 body lines |
 | Basic-Auth URL | `basicAuthUrl` | pattern-only | `https://user:pass@host` |
+| Slack Bot Token | `slackBotToken` | pattern-only | `xoxb-` + 12 digits `-` 13 digits `-` 24 alphanumeric |
+| OpenAI API Key | `openaiKey` | pattern-only | `sk-proj-` + 74 chars + `T3BlbkFJ` + 74 chars |
+| Anthropic API Key | `anthropicKey` | pattern-only | `sk-ant-api03-` + 93 chars + `AA` |
+| npm Access Token | `npmToken` | pattern-only | `npm_` + 36 alphanumeric |
+| SendGrid API Key | `sendgridKey` | pattern-only | `SG.` + 22 chars `.` 43 chars |
+| Twilio API Key SID | `twilioKey` | pattern-only | `SK` + 32 lowercase hex |
+| Azure Storage Key | `azureStorageKey` | pattern-only | 86 base64 chars + `==` |
+| Database Connection String | `dbConnectionString` | pattern-only | `postgres://user:password@host:5432/db` |
+| OpenSSH Private Key | `sshPrivateKey` | pattern-only | `-----BEGIN OPENSSH PRIVATE KEY-----` block, 3 body lines |
+| GCP Service Account Key | `gcpServiceAccount` | pattern-only | The JSON key file as one string: `type`, `project_id`, `private_key`, `client_email` |
+
+The ten from Slack down follow each vendor's prefix and length as commonly documented in 2025. They
+have not been run against a live scanner here, and vendors change formats.
 
 ## Biometric
 
@@ -171,6 +214,7 @@ Individually low-risk; re-identify in combination.
 | Zip Code | `zipCode` | locale | free-form | Faker |
 | Date of Birth | `dob` | — | free-form | ISO date; **row-consistent** with Age |
 | Gender / Ethnicity | `gender` `ethnicity` | — | free-form | Enum; Gender is **row-consistent** with First Name and labelled in the row's locale |
+| Religion / Political Opinion / Trade Union Membership | `religion` `politicalOpinion` `unionMembership` | — | free-form | Enums. GDPR Art.9 special categories that are plain words: sensitive by meaning, not shape |
 | City | `city` | locale | free-form | Faker |
 | Job Title / Dept | `jobTitle` `department` | — | free-form | Faker |
 | Major / University | `major` `university` | — | free-form | Faker job-area / `University of <state>` |
@@ -205,6 +249,7 @@ Already-redacted values — verify masking survives the pipeline (should NOT fir
 | Last 4 SSN | `last4SSN` | 4 digits |
 | Tokenized Card | `tokenizedCard` | `****-****-****-####` |
 | Masked Account | `maskedAccount` | `******####` |
+| Masked Aadhaar | `maskedAadhaar` | `XXXX XXXX ####`, as UIDAI prints it |
 
 ## Non-Sensitive
 
@@ -220,6 +265,7 @@ Neutral business identifiers.
 | Employee / Student / CRM ID | `employeeId` `studentId` `crmId` | free-form | `EMP-#####` / digits / `CUST-######` |
 | EAN-13 Barcode | `ean13` | **mod-10** | 12 digits + weighted mod-10 check |
 | ISIN | `isin` | **mod-10** | Country + 9 alnum + Luhn on digit-expanded form |
+| SWIFT / BIC | `swiftBic` | pattern-only | 4-letter bank + country + 2 alphanumeric + optional 3-character branch; identifies a bank, not a person |
 
 ## DLP-Negative (Near-Miss)
 
@@ -246,6 +292,16 @@ card, in the same dashed/plain shapes) — bumping a random number would leave ~
 | Iqama (near-miss) | `iqama_invalid` | `iqama` |
 | Routing Number (near-miss) | `routingNumber_invalid` | `routingNumber` |
 | DEA Number (near-miss) | `dea_invalid` | `dea` |
+| SIN (near-miss) | `canadaSin_invalid` | `canadaSin` |
+| CPF (near-miss) | `brazilCpf_invalid` | `brazilCpf` |
+| DNI (near-miss) | `spainDni_invalid` | `spainDni` |
+| BSN (near-miss) | `netherlandsBsn_invalid` | `netherlandsBsn` |
+| NIR (near-miss) | `franceNir_invalid` | `franceNir` |
+| NRIC (near-miss) | `singaporeNric_invalid` | `singaporeNric` |
+| TFN (near-miss) | `australiaTfn_invalid` | `australiaTfn` |
+| Resident ID (near-miss) | `chinaResidentId_invalid` | `chinaResidentId` |
+| ZA ID (near-miss) | `southAfricaId_invalid` | `southAfricaId` |
+| Emirates ID (near-miss) | `uaeEmiratesId_invalid` | `uaeEmiratesId` |
 
 Three more are wrong in a different way than a bumped check digit:
 
@@ -362,7 +418,8 @@ Education / Students, Technical / IT.
 - `Biometric / Special-Category` — the four biometric templates + basic PII.
 - `Chaos / Malformed` — every Chaos column next to a name and an email.
 
-**Region-focused** — India PII, India Fintech, US Healthcare, EU GDPR Sweep. Each also sets the locale.
+**Region-focused** — India PII, India Fintech, US Healthcare, EU GDPR Sweep (each also sets the locale), and
+National IDs (World): one national identifier from each of thirteen countries.
 
 ---
 

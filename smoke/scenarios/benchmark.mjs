@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-const PINNED = { india: 'cbe88c09d242c2a30f57f262ea79ba7d0a6d41682c38ecc1a59354f2f0c86d95' };
+const PINNED = { india: 'c20afeef3ef9bbd89341195dbadfc4716bc847fb45e2c97f6b1375b975cd5070' };
 export default async (page, check) => {
   await page.goto('/');
   await page.waitFor('document.querySelectorAll("tbody tr").length === 5');

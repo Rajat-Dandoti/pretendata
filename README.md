@@ -19,8 +19,8 @@ For the exact shape, algorithm, and validation contract of every column, see **[
 - **12 privacy categories**, colour-coded by sensitivity — PII, PHI, PCI, Secrets, Biometric, Network,
   Quasi-Identifier, Statistical, Masked, Non-Sensitive, **DLP-Negative** (checksum-broken false-positive
   controls), and **Chaos** (malformed / hostile values).
-- **Checksum-valid identifiers** so real detectors actually match — Aadhaar (Verhoeff), IBAN (mod-97),
-  IMEI/NPI (Luhn), NHS (mod-11), GSTIN (mod-36), VIN, EAN-13, ISIN, Saudi Iqama (Luhn), and more.
+- **165 columns, checksum-valid where a checksum exists** so real detectors actually match — Aadhaar
+  (Verhoeff), IBAN (mod-97), IMEI/NPI (Luhn), NHS (mod-11), GSTIN (mod-36), VIN, EAN-13, ISIN, and more.
 - **An expectation on every column** — should fire, should not fire, or depends on context — shown in
   the picker and written to the answer key.
 - **Answer key** — one click downloads what each column holds, what a detector should do with it, and
@@ -42,8 +42,12 @@ For the exact shape, algorithm, and validation contract of every column, see **[
   a never-issued range or two digits swapped, plus hard negatives (timestamps, order and tracking
   numbers) that only look like identifiers. Each is guaranteed valid as nothing, to measure a
   detector's false-positive rate.
-- **Secret-scanner bait** — AWS/GitHub/Stripe/Google keys, JWT, bcrypt, PEM, basic-auth URLs in vendor-accurate shapes.
-- **Region-specific IDs** — India (Aadhaar, PAN, GSTIN, UPI, Voter ID, IFSC, ABHA, vehicle reg…), US, UK, EU, Saudi.
+- **Secret-scanner bait** — AWS, GitHub, Stripe, Google, Slack, OpenAI, Anthropic, npm, SendGrid, Twilio and
+  Azure keys, JWT, bcrypt, PEM and OpenSSH keys, GCP service-account JSON, connection strings.
+- **Region-specific IDs with real check rules** — India (Aadhaar, PAN, GSTIN, UPI, Voter ID, IFSC, ABHA,
+  vehicle reg, passport…), US (SSN, ITIN, EIN, NPI, DEA), Canada (SIN), Brazil (CPF, CNPJ), UK (NHS, NINO),
+  Spain (DNI, NIE), Netherlands (BSN), France (NIR), Singapore (NRIC), Australia (TFN), China (resident ID),
+  South Africa, UAE (Emirates ID), Saudi (Iqama). Each validator is tested against a published example.
 - **Compliance tagging (beta)** — see which regulations (GDPR / HIPAA / DPDP) each column falls under,
   with a per-column footprint breakdown.
 - **Column Reference** drawer — a live example, regex/pattern, and checksum algorithm for every column.
@@ -155,7 +159,7 @@ In the app: *Score a tool* → *Use*, then Download and *Answer key*. From a ter
 
 ```bash
 npm run cli -- benchmark india --out india.csv --answer-key india.key.json
-shasum -a 256 india.csv   # cbe88c09d242c2a30f57f262ea79ba7d0a6d41682c38ecc1a59354f2f0c86d95
+shasum -a 256 india.csv   # c20afeef3ef9bbd89341195dbadfc4716bc847fb45e2c97f6b1375b975cd5070
 ```
 
 Run your tool over the file, then load its results and the answer key in *Score a tool*. A benchmark

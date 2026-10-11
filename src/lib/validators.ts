@@ -247,8 +247,11 @@ export function generateVoterId(): string { return alphaUpper(3) + digits(7); }
 export function generateVehicleRegIndia(): string {
   return pick(INDIA_STATES) + String(rand(99)).padStart(2, '0') + alphaUpper(1 + rand(2)) + digits(4);
 }
-// IFSC: 4-letter bank code + '0' (reserved) + 6-char branch code (commonly numeric).
-export function generateIFSC(): string { return alphaUpper(4) + '0' + digits(6); }
+// IFSC: 4-letter bank code + '0' (reserved) + 6-char branch code (commonly numeric). Bank codes are real
+// ones (State Bank, HDFC, ICICI, Axis, PNB, Kotak, Bank of Baroda, Canara, Indian Bank, Yes Bank), since
+// detectors that know the registry reject invented ones; the branch part is random.
+const IFSC_BANKS = ['SBIN', 'HDFC', 'ICIC', 'UTIB', 'PUNB', 'KKBK', 'BARB', 'CNRB', 'IDIB', 'YESB'];
+export function generateIFSC(): string { return pick(IFSC_BANKS) + '0' + digits(6); }
 // ABHA (health ID): 14 digits. ponytail: checksum unverified (Verhoeff plausible, unconfirmed) → pattern-only.
 export function generateABHA(): string { return digits(14); }
 
@@ -267,6 +270,130 @@ export function generateJWT(): string {
 export function generateIqama(): string {
   const body = '2' + digits(8);
   return body + luhnCheckDigit(body);
+}
+
+// ---------- National identifiers beyond India, the US and the UK ----------
+// Each has a published check rule, a validator in VALIDATORS below, and a known-good value from
+// outside this codebase in the self-check. Where the number encodes a birth date or sex, the
+// generator takes the row's, so it agrees with the Date of Birth and Gender columns.
+export type Sex = 'female' | 'male';
+const someDob = () => new Date(Date.UTC(1950 + rand(55), rand(12), 1 + rand(28)));
+const someSex = (): Sex => pick(['female', 'male']);
+const ymd = (d: Date) => ({ y: d.getUTCFullYear(), m: pad2(d.getUTCMonth() + 1), d: pad2(d.getUTCDate()) });
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const strip = (s: string) => s.replace(/[\s.\-/]/g, '');
+
+// Canada SIN: 9 digits, Luhn. First digit 0 and 8 are not issued to individuals.
+export function generateSIN(): string {
+  const body = pick(['1', '2', '3', '4', '5', '6', '7', '9']) + digits(7);
+  const d = body + luhnCheckDigit(body);
+  return `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`;
+}
+
+// Brazil CPF: 9 digits + two mod-11 check digits, written NNN.NNN.NNN-DD.
+const mod11Check = (ds: number[], firstWeight: number) => { const r = ds.reduce((s, d, i) => s + d * (firstWeight - i), 0) % 11; return r < 2 ? 0 : 11 - r; };
+function cpfChecks(base9: string): string {
+  const ds = [...base9].map(Number);
+  const d1 = mod11Check(ds, 10);
+  return `${d1}${mod11Check([...ds, d1], 11)}`;
+}
+export function generateCPF(): string {
+  const b = digits(9);
+  return `${b.slice(0, 3)}.${b.slice(3, 6)}.${b.slice(6)}-${cpfChecks(b)}`;
+}
+
+// Brazil CNPJ: 8-digit company root + 4-digit branch (0001 = head office) + two mod-11 check digits.
+const CNPJ_W = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+function cnpjChecks(base12: string): string {
+  const check = (ds: number[]) => { const w = CNPJ_W.slice(13 - ds.length); const r = ds.reduce((s, d, i) => s + d * w[i], 0) % 11; return r < 2 ? 0 : 11 - r; };
+  const ds = [...base12].map(Number);
+  const d1 = check(ds);
+  return `${d1}${check([...ds, d1])}`;
+}
+export function generateCNPJ(): string {
+  const b = digits(8) + '0001';
+  return `${b.slice(0, 2)}.${b.slice(2, 5)}.${b.slice(5, 8)}/${b.slice(8)}-${cnpjChecks(b)}`;
+}
+
+// US ITIN: SSN-shaped, area 900–999, and a group from the ranges the IRS assigns (50–65, 70–88, 90–92, 94–99).
+const ITIN_GROUPS = [...Array(100).keys()].filter(g => (g >= 50 && g <= 65) || (g >= 70 && g <= 88) || (g >= 90 && g <= 92) || (g >= 94 && g <= 99));
+export function generateITIN(): string { return `9${digits(2)}-${pad2(pick(ITIN_GROUPS))}-${digits(4)}`; }
+
+// UK National Insurance number: two prefix letters under HMRC's exclusions, six digits, suffix A–D. No check digit.
+const NINO_FIRST = 'ABCEGHJKLMNOPRSTWXYZ', NINO_SECOND = 'ABCEGHJKLMNPRSTWXYZ';
+const NINO_BARRED = new Set(['BG', 'GB', 'KN', 'NK', 'NT', 'TN', 'ZZ']);
+export function generateNINO(): string {
+  let prefix: string;
+  do { prefix = NINO_FIRST[rand(NINO_FIRST.length)] + NINO_SECOND[rand(NINO_SECOND.length)]; } while (NINO_BARRED.has(prefix));
+  return prefix + digits(6) + pick(['A', 'B', 'C', 'D']);
+}
+
+// Spain DNI: 8 digits + a letter that is the number mod 23. NIE (foreigners): X/Y/Z stands for 0/1/2, then 7 digits.
+const DNI_LETTERS = 'TRWAGMYFPDXBNJZSQVHLCKE';
+export function generateDNI(): string { const n = digits(8); return n + DNI_LETTERS[Number(n) % 23]; }
+export function generateNIE(): string { const p = rand(3), n = digits(7); return 'XYZ'[p] + n + DNI_LETTERS[Number(`${p}${n}`) % 23]; }
+
+// Netherlands BSN: 9 digits passing the "11-proef": 9·d1 + 8·d2 + … + 2·d8 − d9 divisible by 11.
+const bsnSum = (d: string) => [...d].reduce((s, c, i) => s + Number(c) * (i === 8 ? -1 : 9 - i), 0);
+export function generateBSN(): string {
+  for (;;) {
+    const body = String(1 + rand(9)) + digits(7);
+    const last = bsnSum(body + '0') % 11; // the last digit enters with weight −1
+    if (last < 10) return body + last;
+  }
+}
+
+// France NIR: sex, birth year and month, department, commune, order, then a key of 97 − (number mod 97).
+// Departments 01–95 except 20 (Corsica is 2A/2B and takes a special rule, not generated here).
+const NIR_DEPTS = [...Array(95).keys()].map(i => i + 1).filter(d => d !== 20);
+const nirKey = (n13: string) => pad2(97 - Number(BigInt(n13) % 97n));
+export function generateNIR(dob = someDob(), sex = someSex()): string {
+  const { y, m } = ymd(dob);
+  const n = `${sex === 'male' ? 1 : 2}${String(y).slice(2)}${m}${pad2(pick(NIR_DEPTS))}${String(1 + rand(990)).padStart(3, '0')}${String(1 + rand(999)).padStart(3, '0')}`;
+  return n + nirKey(n);
+}
+
+// Singapore NRIC: S (born before 2000) or T (from 2000) + 7 digits + a letter from the weighted sum mod 11.
+const NRIC_W = [2, 7, 6, 5, 4, 3, 2], NRIC_ST = 'JZIHGFEDCBA';
+const nricLetter = (prefix: string, d7: string) => NRIC_ST[([...d7].reduce((s, c, i) => s + Number(c) * NRIC_W[i], 0) + (prefix === 'T' ? 4 : 0)) % 11];
+export function generateNRIC(dob = someDob()): string {
+  const prefix = dob.getUTCFullYear() >= 2000 ? 'T' : 'S', d = digits(7);
+  return prefix + d + nricLetter(prefix, d);
+}
+
+// Australia TFN: 9 digits whose weighted sum (1, 4, 3, 7, 5, 8, 6, 9, 10) is divisible by 11.
+const TFN_W = [1, 4, 3, 7, 5, 8, 6, 9, 10];
+const tfnSum = (d: string) => [...d].reduce((s, c, i) => s + Number(c) * TFN_W[i], 0);
+export function generateTFN(): string {
+  for (;;) {
+    const body = String(1 + rand(9)) + digits(7);
+    const last = tfnSum(body + '0') % 11; // 10·d9 ≡ −d9 (mod 11), so d9 is the remainder of the rest
+    if (last < 10) return body + last;
+  }
+}
+
+// China Resident Identity Card: 6-digit region, birth date, 3-digit order (odd = male), ISO 7064 MOD 11-2 check.
+const CN_REGIONS = ['110105', '310101', '440106', '440305', '510104', '330106', '320102', '420106', '610113', '500103'];
+const CN_W = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+const cnCheck = (d17: string) => '10X98765432'[[...d17].reduce((s, c, i) => s + Number(c) * CN_W[i], 0) % 11];
+export function generateChinaId(dob = someDob(), sex = someSex()): string {
+  const { y, m, d } = ymd(dob);
+  const order = rand(500) * 2 + (sex === 'male' ? 1 : 0);
+  const body = `${pick(CN_REGIONS)}${y}${m}${d}${String(order).padStart(3, '0')}`;
+  return body + cnCheck(body);
+}
+
+// South Africa ID: birth date YYMMDD, 4-digit sequence (5000+ = male), citizenship, a historical 8, Luhn check.
+export function generateSouthAfricaId(dob = someDob(), sex = someSex()): string {
+  const { y, m, d } = ymd(dob);
+  const body = `${String(y).slice(2)}${m}${d}${String((sex === 'male' ? 5000 : 0) + rand(5000)).padStart(4, '0')}${rand(2)}8`;
+  return body + luhnCheckDigit(body);
+}
+
+// UAE Emirates ID: 784 (the country code), a year, 7 digits, Luhn check over all fifteen. Written with dashes.
+export function generateEmiratesId(dob = someDob()): string {
+  const body = `784${dob.getUTCFullYear()}${digits(7)}`;
+  return `784-${body.slice(3, 7)}-${body.slice(7)}-${luhnCheckDigit(body)}`;
 }
 
 // ---------- Mobile numbers, per locale ----------
@@ -428,6 +555,20 @@ export const VALIDATORS: Record<string, (value: string) => boolean> = {
     const d = [...s.slice(2)].map(Number);
     return (d[0] + d[2] + d[4] + 2 * (d[1] + d[3] + d[5])) % 10 === d[6];
   },
+  canadaSin: s => { const d = strip(s); return /^\d{9}$/.test(d) && luhnOk(d); },
+  brazilCpf: s => { const d = strip(s); return /^\d{11}$/.test(d) && !/^(\d)\1{10}$/.test(d) && cpfChecks(d.slice(0, 9)) === d.slice(9); },
+  brazilCnpj: s => { const d = strip(s); return /^\d{14}$/.test(d) && cnpjChecks(d.slice(0, 12)) === d.slice(12); },
+  usItin: s => { const m = /^9\d{2}-?(\d{2})-?\d{4}$/.exec(s); return !!m && ITIN_GROUPS.includes(Number(m[1])); },
+  ukNino: s => { const d = strip(s).toUpperCase(); return /^[A-CEGHJ-PR-TW-Z][A-CEGHJ-NPR-TW-Z]\d{6}[A-D]$/.test(d) && !NINO_BARRED.has(d.slice(0, 2)); },
+  spainDni: s => { const d = strip(s).toUpperCase(); return /^\d{8}[A-Z]$/.test(d) && DNI_LETTERS[Number(d.slice(0, 8)) % 23] === d[8]; },
+  spainNie: s => { const d = strip(s).toUpperCase(); return /^[XYZ]\d{7}[A-Z]$/.test(d) && DNI_LETTERS[Number('XYZ'.indexOf(d[0]) + d.slice(1, 8)) % 23] === d[8]; },
+  netherlandsBsn: s => { const d = strip(s); return /^\d{9}$/.test(d) && d !== '000000000' && bsnSum(d) % 11 === 0; },
+  franceNir: s => { const d = strip(s); return /^[12]\d{2}(0[1-9]|1[0-2])\d{10}$/.test(d) && nirKey(d.slice(0, 13)) === d.slice(13); },
+  singaporeNric: s => { const d = strip(s).toUpperCase(); return /^[ST]\d{7}[A-Z]$/.test(d) && nricLetter(d[0], d.slice(1, 8)) === d[8]; },
+  australiaTfn: s => { const d = strip(s); return /^\d{9}$/.test(d) && tfnSum(d) % 11 === 0; },
+  chinaResidentId: s => { const d = strip(s).toUpperCase(); return /^\d{6}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[0-9X]$/.test(d) && cnCheck(d.slice(0, 17)) === d[17]; },
+  southAfricaId: s => { const d = strip(s); return /^\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{4}[01]\d{2}$/.test(d) && luhnOk(d); },
+  uaeEmiratesId: s => { const d = strip(s); return /^784\d{12}$/.test(d) && luhnOk(d); },
   // ABA routing number: weights 3, 7, 1 repeating, sum divisible by 10.
   routingNumber: s => /^\d{9}$/.test(s) && [...s].reduce((sum, c, i) => sum + parseInt(c, 10) * [3, 7, 1][i % 3], 0) % 10 === 0,
 };
@@ -590,11 +731,26 @@ export function _selfCheck() {
     routingNumber: ['021000021', '011000015'],
     npi: ['1234567893'],
     ssn: ['078-05-1120'],
+    canadaSin: ['046 454 286'],
+    brazilCpf: ['529.982.247-25'],
+    brazilCnpj: ['11.222.333/0001-81'],
+    usItin: ['900-70-0000', '999-88-9999'],
+    ukNino: ['AB123456C'],
+    spainDni: ['12345678Z'],
+    spainNie: ['X1234567L'],
+    netherlandsBsn: ['111222333'],
+    franceNir: ['1 74 03 30 007 058 47'],
+    singaporeNric: ['S1234567D'],
+    australiaTfn: ['123456782'],
+    chinaResidentId: ['11010519491231002X'],
+    southAfricaId: ['8001015009087'],
+    uaeEmiratesId: ['784-1990-1234567-6'],
   };
   for (const [id, values] of Object.entries(KNOWN_GOOD)) {
     for (const v of values) assert(VALIDATORS[id](v), `validator ${id} rejects the known-good value ${v}`);
   }
-  for (const [id, v] of Object.entries({ ssn: '666-12-3456', creditCard: '4111111111111112', iban: 'GB82WEST1234569876543', vin: '1M8GDM9A1KP042788', aadhaar: '123456789012', routingNumber: '021000022' })) {
+  for (const [id, v] of Object.entries({ ssn: '666-12-3456', creditCard: '4111111111111112', iban: 'GB82WEST1234569876543', vin: '1M8GDM9A1KP042788', aadhaar: '123456789012', routingNumber: '021000022',
+    ukNino: 'QQ123456A', usItin: '900-69-0000', spainDni: '12345678A', netherlandsBsn: '111222334', brazilCpf: '111.111.111-11', singaporeNric: 'S1234567A', chinaResidentId: '110105194912310021' })) {
     assert(!VALIDATORS[id](v), `validator ${id} accepts the known-bad value ${v}`);
   }
   console.log('validators: all self-checks passed');

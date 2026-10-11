@@ -37,7 +37,7 @@ const CATEGORY_TIER: Record<PrivacyCategory, 'special' | 'personal' | 'none'> = 
 };
 
 // Racial/ethnic origin is Art.9 special even though the column lives under Quasi-Identifier.
-const SPECIAL_OVERRIDE = new Set<string>(['ethnicity']);
+const SPECIAL_OVERRIDE = new Set<string>(['ethnicity', 'religion', 'politicalOpinion', 'unionMembership']);
 
 // Force plain 'personal' regardless of category:
 //  - npi/dea identify a healthcare *provider* (public registries), not a patient → not special/PHI.

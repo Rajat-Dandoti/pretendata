@@ -25,10 +25,23 @@ const FILES: Record<string, string> = {
 AWS_ACCESS_KEY_ID={{awsAccessKey}}
 AWS_SECRET_ACCESS_KEY={{awsSecretKey}}
 STRIPE_SECRET_KEY={{stripeKey}}
-DATABASE_URL={{basicAuthUrl}}/app
+API_BASE_URL={{basicAuthUrl}}/v1
+DATABASE_URL={{dbConnectionString}}
+SLACK_BOT_TOKEN={{slackBotToken}}
+OPENAI_API_KEY={{openaiKey}}
+ANTHROPIC_API_KEY={{anthropicKey}}
+SENDGRID_API_KEY={{sendgridKey}}
+TWILIO_API_KEY_SID={{twilioKey}}
+AZURE_STORAGE_KEY={{azureStorageKey}}
 GITHUB_TOKEN=[[\${GITHUB_TOKEN}]]
-SENDGRID_API_KEY=[[your-api-key-here]]
+MAILGUN_API_KEY=[[your-api-key-here]]
 SESSION_SECRET=[[changeme]]
+`,
+  '.npmrc': `//registry.npmjs.org/:_authToken={{npmToken}}
+`,
+  'config/gcp-service-account.json': `{{gcpServiceAccount}}
+`,
+  'deploy/id_ed25519': `{{sshPrivateKey}}
 `,
   'config/settings.yaml': `# ${BANNER}
 github:
